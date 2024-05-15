@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstring>
 
 #include "parser.hpp"
 
@@ -18,7 +19,24 @@ namespace Roee_ELF {
             << "\nSize in memory: 0x" << std::hex << ph.size_in_mem
             << "\nAlign: 0x" << std::hex << ph.align << "\n";
     }
+
 #endif
+
+    void Parser_64b::get_code(uint64_t** code_ptr) const {
+        uint16_t code_seg_index;
+        for (uint16_t i = 0; i < prog_headers.size(); ++i) {
+            if (prog_headers[i].virtual_addr == entry_point) { // if this is the code segment were looking for
+                code_seg_index = i;
+                goto get_code_seg;
+            }
+        }
+
+        std::cout << "WARNING: Code segment not found!\n";
+
+    get_code_seg:
+        file.seekg(prog_headers[code_seg_index].offset, std::ios::beg);
+        file.read((char*)(*code_ptr), 0x100);
+    }
 
     void Parser_64b::parse_prog_header_type(const uint8_t i) {
         uint32_t foo;

@@ -1,3 +1,6 @@
+#ifndef PARSER_HPP
+#define PARSER_HPP
+
 #include <cstdint>
 #include <fstream>
 #include <vector>
@@ -38,6 +41,7 @@ namespace Roee_ELF {
         void parse_entry_point();
         void parse_prog_headers();
 
+        void get_code(uint64_t** code_ptr) const;
     private:
         void parse_prog_header_flags(const uint8_t i);
         void parse_prog_header_type(const uint8_t i);
@@ -45,9 +49,8 @@ namespace Roee_ELF {
         void print_prog_header(const struct prog_header& ph) const;
 #endif
 
-    private:
+    public:
         std::ifstream& file;
-
         uint16_t isa;
         uint16_t file_type;
         uint64_t entry_point;
@@ -55,3 +58,5 @@ namespace Roee_ELF {
     };
 
 }
+
+#endif

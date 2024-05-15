@@ -1,1 +1,0 @@
-g++ parser.cpp main.cpp -o parser -g -DDEBUG -Wall

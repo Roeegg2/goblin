@@ -1,1 +1,1 @@
-gcc test.c -o test -g -Wall
+g++ parser.cpp runner.cpp main.cpp -o parser -g -DDEBUG -Wall
