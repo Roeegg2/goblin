@@ -36,12 +36,12 @@ namespace Roee_ELF {
     class Parser_64b final {
     public:
         Parser_64b(std::ifstream& file);
-        void parse_isa();
-        void parse_file_type();
-        void parse_entry_point();
-        void parse_prog_headers();
+        void parse_isa(void);
+        void parse_file_type(void);
+        void parse_entry_point(void);
+        void parse_prog_headers(void);
 
-        void get_code(uint64_t** code_ptr) const;
+        uint64_t* get_code(void) const;
     private:
         void parse_prog_header_flags(const uint8_t i);
         void parse_prog_header_type(const uint8_t i);

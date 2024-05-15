@@ -8,8 +8,7 @@ namespace Roee_ELF {
     Runner::Runner(Parser_64b* const parser) : parser(parser) {}
 
     void Runner::run() const {
-        uint64_t* code = new uint64_t[0x100];
-        parser->get_code(&code);
+        uint64_t* code = parser->get_code();
 
         uint64_t foo = ((uint64_t)code) & (~0xfff);
         if (mprotect((void*)(foo), 0x100, PROT_EXEC | PROT_READ) == -1) {

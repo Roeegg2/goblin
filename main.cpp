@@ -4,7 +4,7 @@
 using namespace Roee_ELF;
 
 int main() {
-    std::ifstream file("../hello", std::ios::in | std::ios::binary);
+    std::ifstream file("pic_hello", std::ios::in | std::ios::binary);
 
     Parser_64b* const parser = new Parser_64b(file);
     Runner* const runner = new Runner(parser);
