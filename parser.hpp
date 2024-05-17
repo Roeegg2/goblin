@@ -42,6 +42,7 @@ namespace Roee_ELF {
         void parse_prog_headers(void);
 
         uint64_t* get_code(void) const;
+        void get_data_info(uint64_t* virtual_addr, uint64_t* size_in_mem, uint64_t** data_buff);
     private:
         void parse_prog_header_flags(const uint8_t i);
         void parse_prog_header_type(const uint8_t i);

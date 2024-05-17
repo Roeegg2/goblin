@@ -21,6 +21,16 @@ namespace Roee_ELF {
     }
 #endif
 
+    void Parser_64b::get_data_info(uint64_t* virtual_addr, uint64_t* size_in_mem, uint64_t** data_buff) {
+        // NOTE right now this is specific to the "hello" executable, later on will make this generelized 
+        *virtual_addr = 0x402000;
+        *size_in_mem = 0xe;
+
+        file.seekg(0x2000, std::ios::beg);
+        file.read((char*)(*data_buff), 0xe);
+    }
+
+
     uint64_t* Parser_64b::get_code() const {
         uint16_t code_seg_i;
         for (uint16_t i = 0; i < prog_headers.size(); ++i) {
@@ -31,6 +41,7 @@ namespace Roee_ELF {
         }
 
         std::cout << "WARNING: Code segment not found!\n";
+        return nullptr;
 
     get_code_seg:
         uint64_t* code_buff = new uint64_t[prog_headers[code_seg_i].size_in_file];
