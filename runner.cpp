@@ -38,4 +38,34 @@ namespace Roee_ELF {
 
         delete code;
     }
+
+    void Runner::map_segments() {
+        using prog_header_it = std::vector<struct prog_header>::iterator;
+        using loaded_segment_it = std::vector<struct loaded_segment>::iterator;
+
+        loaded_segment_it ls_it = loaded_segments.begin();
+        for (prog_header_it ph_it = parser->prog_headers.begin(); ph_it != parser->prog_headers.end(); ph_it++, ls_it++) {
+            if (ph_it->flags[0] == 'r' && ph_it->flags[1] == 'w' && ph_it->flags[2] == '.') { // if this is the segment containing the data section
+                void* mapped_addr = mmap((void*)(ph_it->virtual_addr), ph_it->size_in_mem, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+                parser->file.seekg(ph_it->offset, std::ios::beg);
+                parser->file.read((char*)(mapped_addr), ph_it->size_in_file);
+            } else {
+                seg_buff = new uint64_t[ph_it->size_in_file];
+
+                parser->file.seekg(ph_it->offset, std::ios::beg);
+                parser->file.read((char*)(seg_buff), ph_it->size_in_file);
+
+                if (ph_it->flags[2] == 'x') {
+
+                }
+            }
+        }
+
+    }
+
+        /**
+         * plan for mapping segments:
+         * 1.
+        */
 }
