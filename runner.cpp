@@ -14,8 +14,7 @@ namespace Roee_ELF {
         uint64_t virtual_addr, size_in_mem;
         uint64_t* data_buff = new uint64_t[0xe];
         uint64_t* code = parser->get_code();
-        std::cout << "code addr: " << std::hex << code << "\n";
-        std::cout << "data addr: " << std::hex << data_buff << "\n";
+
         parser->get_data_info(&virtual_addr, &size_in_mem, &data_buff);
         // NOTE not sure if i should use size_in_mem or size_in_file here
         void* mapped_addr = mmap((void*)(virtual_addr), size_in_mem, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);

@@ -22,19 +22,28 @@ namespace Roee_ELF {
 #endif
 
     void Parser_64b::get_data_info(uint64_t* virtual_addr, uint64_t* size_in_mem, uint64_t** data_buff) {
-        // NOTE right now this is specific to the "hello" executable, later on will make this generelized 
-        *virtual_addr = 0x402000;
-        *size_in_mem = 0xe;
+        // NOTE right now this is specific to the "hello" executable, later on will make this generelized
+        uint16_t data_seg_i;
+        for (uint16_t i = 0; i < prog_headers.size(); ++i) {
+            if ((prog_headers[i].flags[0] == 'r') && (prog_headers[i].flags[1] == 'w') && (prog_headers[i].flags[2] == '.')) { // if this is the code segment were looking for
+                data_seg_i = i;
+                goto get_data_seg;
+            }
+        }
 
-        file.seekg(0x2000, std::ios::beg);
-        file.read((char*)(*data_buff), 0xe);
+    get_data_seg:
+        *virtual_addr = prog_headers[data_seg_i].virtual_addr;
+        *size_in_mem = prog_headers[data_seg_i].size_in_mem;
+
+        file.seekg(prog_headers[data_seg_i].offset, std::ios::beg);
+        file.read((char*)(*data_buff), *size_in_mem);
     }
 
 
     uint64_t* Parser_64b::get_code() const {
         uint16_t code_seg_i;
         for (uint16_t i = 0; i < prog_headers.size(); ++i) {
-            if (prog_headers[i].virtual_addr == entry_point) { // if this is the code segment were looking for
+            if (prog_headers[i].flags[2] == 'x') { // if this is the code segment were looking for
                 code_seg_i = i;
                 goto get_code_seg;
             }
@@ -91,6 +100,21 @@ namespace Roee_ELF {
                 break;
             case PT_HIPROC:
                 prog_headers[i].type = "Processor specific";
+                break;
+            case PT_GNUEH_FRAME:
+                prog_headers[i].type = "GNU_EH_FRAME";
+                break;
+            case PT_GNUSTACK:
+                prog_headers[i].type = "GNU_STACK";
+                break;
+            case PT_GNU_RELRO:
+                prog_headers[i].type = "GNU_RELRO";
+                break;
+            case PT_GNUPROPERTY:
+                prog_headers[i].type = "GNU_PROPERTY";
+                break;
+            default:
+                prog_headers[i].type = "Unknown";
                 break;
         }
     }

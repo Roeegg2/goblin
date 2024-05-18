@@ -1,1 +1,1 @@
-g++ parser.cpp runner.cpp main.cpp -o parser -g -DDEBUG -Wall
+g++ parser.cpp runner.cpp main.cpp -o elf -g -DDEBUG -Wall
