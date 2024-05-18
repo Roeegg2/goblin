@@ -15,7 +15,7 @@ namespace Roee_ELF {
     class Runner final {
     public:
         Runner(Parser_64b* const parser);
-        void run(void) const;
+        void run(void);
 
     private:
         void map_segments(void);
@@ -24,7 +24,7 @@ namespace Roee_ELF {
         Parser_64b* parser;
 
         std::vector<loaded_segment> loaded_segments;
-
+        uint16_t code_segment_i;
     };
 }
 
