@@ -7,238 +7,191 @@ namespace Roee_ELF {
     Parser_64b::Parser_64b(std::ifstream& file)
         : file(file) {}
 
-#ifdef DEBUG
-    void Parser_64b::print_prog_header(const struct prog_header& ph) const {
-        std::cout << "\nPROG HEADER:\n"
-            << "\nType: " << std::hex << ph.type
-            << "\nFlags: " << std::hex << ph.flags
-            << "\nOffset: 0x" << std::hex << ph.offset
-            << "\nVirtual address: 0x" << std::hex << ph.virtual_addr
-            << "\nPhysical address: 0x" << std::hex << ph.physical_addr
-            << "\nSize in file: 0x" << std::hex << ph.size_in_file
-            << "\nSize in memory: 0x" << std::hex << ph.size_in_mem
-            << "\nAlign: 0x" << std::hex << ph.align << "\n";
-    }
-#endif
-
-    void Parser_64b::get_data_info(uint64_t* virtual_addr, uint64_t* size_in_mem, uint64_t** data_buff) {
-        // NOTE right now this is specific to the "hello" executable, later on will make this generelized
-        uint16_t data_seg_i;
-        for (uint16_t i = 0; i < prog_headers.size(); ++i) {
-            if ((prog_headers[i].flags[0] == 'r') && (prog_headers[i].flags[1] == 'w') && (prog_headers[i].flags[2] == '.')) { // if this is the code segment were looking for
-                data_seg_i = i;
-                goto get_data_seg;
-            }
-        }
-
-    get_data_seg:
-        *virtual_addr = prog_headers[data_seg_i].virtual_addr;
-        *size_in_mem = prog_headers[data_seg_i].size_in_mem;
-
-        file.seekg(prog_headers[data_seg_i].offset, std::ios::beg);
-        file.read((char*)(*data_buff), *size_in_mem);
-    }
-
-
-    uint64_t* Parser_64b::get_code() const {
-        uint16_t code_seg_i;
-        for (uint16_t i = 0; i < prog_headers.size(); ++i) {
-            if (prog_headers[i].flags[2] == 'x') { // if this is the code segment were looking for
-                code_seg_i = i;
-                goto get_code_seg;
-            }
-        }
-
-        std::cout << "WARNING: Code segment not found!\n";
-        return nullptr;
-
-    get_code_seg:
-        uint64_t* code_buff = new uint64_t[prog_headers[code_seg_i].size_in_file];
-        file.seekg(prog_headers[code_seg_i].offset, std::ios::beg);
-        file.read((char*)(code_buff), prog_headers[code_seg_i].size_in_file);
-
-        return code_buff;
-    }
-
-    void Parser_64b::parse_prog_header_type(const uint8_t i) {
-        uint32_t foo;
-        file.read(reinterpret_cast<char*>(&foo), 4);
-
-        switch (foo) {
+    void Parser_64b::print_ph_type(const uint8_t i) const {
+        switch (prog_headers[i].type) {
             case PT_NULL:
-                prog_headers[i].type = "Unused program header table entry";
+                std::cout << "Unused program header table entry\n";
                 break;
             case PT_LOAD:
-                prog_headers[i].type = "Loadable segment";
+                std::cout << "Loadable segment\n";
                 break;
             case PT_DYNAMIC:
-                prog_headers[i].type = "Dynamic linking information";
+                std::cout << "Dynamic linking information\n";
                 break;
             case PT_INTERP:
-                prog_headers[i].type = "Interpreter information";
+                std::cout << "Interpreter information\n";
                 break;
             case PT_NOTE:
-                prog_headers[i].type = "Auxiliary information";
+                std::cout << "Auxiliary information\n";
                 break;
             case PT_SHLIB:
-                prog_headers[i].type = "Revserved";
+                std::cout << "Revserved\n";
                 break;
             case PT_PHDR:
-                prog_headers[i].type = "Program header table itself";
+                std::cout << "Program header table itself\n";
                 break;
             case PT_TLS:
-                prog_headers[i].type = "Thread-local storage template";
+                std::cout << "Thread-local storage template\n";
                 break;
             case PT_LOOS:
-                prog_headers[i].type = "OS specific";
+                std::cout << "OS specific\n";
                 break;
             case PT_HIOS:
-                prog_headers[i].type = "OS specific";
+                std::cout << "OS specific\n";
                 break;
             case PT_LOPROC:
-                prog_headers[i].type = "Processor specific";
+                std::cout << "Processor specific\n";
                 break;
             case PT_HIPROC:
-                prog_headers[i].type = "Processor specific";
+                std::cout << "Processor specific\n";
                 break;
             case PT_GNUEH_FRAME:
-                prog_headers[i].type = "GNU_EH_FRAME";
+                std::cout << "GNU_EH_FRAME\n";
                 break;
             case PT_GNUSTACK:
-                prog_headers[i].type = "GNU_STACK";
+                std::cout << "GNU_STACK\n";
                 break;
             case PT_GNU_RELRO:
-                prog_headers[i].type = "GNU_RELRO";
+                std::cout << "GNU_RELRO\n";
                 break;
             case PT_GNUPROPERTY:
-                prog_headers[i].type = "GNU_PROPERTY";
+                std::cout << "GNU_PROPERTY\n";
                 break;
             default:
-                prog_headers[i].type = "Unknown";
-                break;
-        }
-    }
-
-    void Parser_64b::parse_prog_header_flags(const uint8_t i) {
-        uint32_t foo;
-        file.read(reinterpret_cast<char*>(&foo), 4);
-
-        if (foo & 0b001)
-            prog_headers[i].flags[2] = 'x';
-        if (foo & 0b010)
-            prog_headers[i].flags[1] = 'w';
-        if (foo & 0b100)
-            prog_headers[i].flags[0] = 'r';
-    }
-
-    void Parser_64b::parse_prog_headers() {
-        file.seekg(0x20, std::ios::beg);
-        uint64_t ph_offset;
-        file.read(reinterpret_cast<char*>(&ph_offset), 8);
-
-        file.seekg(0x36, std::ios::beg);
-        uint16_t ph_entry_size;
-        file.read(reinterpret_cast<char*>(&ph_entry_size), 2);
-
-        file.seekg(0x38, std::ios::beg);
-        uint16_t ph_entry_count;
-        file.read(reinterpret_cast<char*>(&ph_entry_count), 2);
-        prog_headers.resize(ph_entry_count);
-
-        file.seekg(ph_offset, std::ios::beg);
-        for (uint16_t i = 0; i < ph_entry_count; ++i) {
-            parse_prog_header_type(i);
-            parse_prog_header_flags(i);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].offset), 8);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].virtual_addr), 8);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].physical_addr), 8);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].size_in_file), 8);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].size_in_mem), 8);
-            file.read(reinterpret_cast<char*>(&prog_headers[i].align), 8);
-#ifdef DEBUG
-            print_prog_header(prog_headers[i]);
-#endif
-        }
-    }
-
-    void Parser_64b::parse_isa() {
-        file.seekg(0x12, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&isa), 2);
-
-        switch (isa) {
-            case 0x0:
-                std::cout << "No specific ISA\n";
-                break;
-            case 0x2:
-                std::cout << "SPARC\n";
-                break;
-            case 0x3:
-                std::cout << "x86\n";
-                break;
-            case 0x8:
-                std::cout << "MIPS\n";
-                break;
-            case 0x14:
-                std::cout << "PowerPC\n";
-                break;
-            case 0x16:
-                std::cout << "S390\n";
-                break;
-            case 0x28:
-                std::cout << "ARM\n";
-                break;
-            case 0x2A:
-                std::cout << "SuperH\n";
-                break;
-            case 0x32:
-                std::cout << "IA-64\n";
-                break;
-            case 0x3E:
-                std::cout << "x86-64\n";
-                break;
-            case 0xB7:
-                std::cout << "AArch64\n";
-                break;
-            case 0xF3:
-                std::cout << "RISC-V\n";
-                break;
-            default:
-                std::cout << "Other\n";
-                break;
-
-        }
-    }
-
-    void Parser_64b::parse_file_type() {
-        file.seekg(0x10, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&file_type), 2);
-
-        switch (file_type) {
-            case 0x0:
                 std::cout << "Unknown\n";
                 break;
-            case 0x1:
-                std::cout << "Relocatable\n";
+        }
+    }
+
+    void Parser_64b::print_isa(void) const {
+        switch (elf_header.e_isa) {
+            case 0x0:
+                std::cout << "No specific ISA\n\n";
                 break;
             case 0x2:
-                std::cout << "Executable\n";
+                std::cout << "SPARC\n\n";
                 break;
             case 0x3:
-                std::cout << "Shared\n";
+                std::cout << "x86\n\n";
                 break;
-            case 0x4:
-                std::cout << "Core\n";
+            case 0x8:
+                std::cout << "MIPS\n\n";
+                break;
+            case 0x14:
+                std::cout << "PowerPC\n\n";
+                break;
+            case 0x16:
+                std::cout << "S390\n\n";
+                break;
+            case 0x28:
+                std::cout << "ARM\n\n";
+                break;
+            case 0x2A:
+                std::cout << "SuperH\n\n";
+                break;
+            case 0x32:
+                std::cout << "IA-64\n\n";
+                break;
+            case 0x3E:
+                std::cout << "x86-64\n\n";
+                break;
+            case 0xB7:
+                std::cout << "AArch64\n\n";
+                break;
+            case 0xF3:
+                std::cout << "RISC-V\n\n";
                 break;
             default:
-                std::cout << "Other\n";
+                std::cout << "Other\n\n";
+                break;
+
+        }
+    }
+
+    void Parser_64b::print_file_type(void) const {
+        switch (elf_header.e_type) {
+            case 0x0:
+                std::cout << "Unknown\n\n";
+                break;
+            case 0x1:
+                std::cout << "Relocatable\n\n";
+                break;
+            case 0x2:
+                std::cout << "Executable\n\n";
+                break;
+            case 0x3:
+                std::cout << "Shared\n\n";
+                break;
+            case 0x4:
+                std::cout << "Core\n\n";
+                break;
+            default:
+                std::cout << "Other\n\n";
                 break;
         }
     }
 
-    void Parser_64b::parse_entry_point() {
-        file.seekg(0x18, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&entry_point), 8);
+    void Parser_64b::print_ph(void) const {
+        for (uint16_t i = 0; i < prog_headers.size(); i++) {
+            std::cout << "Segment " << i
+                << "  Type: ";
+            print_ph_type(i);
 
-        std::cout << "Entry point: 0x" << std::hex << entry_point << "\n";
+            std::cout << "  Flags: " << std::hex << prog_headers[i].flags
+                << "  Offset: " << prog_headers[i].offset
+                << "  Virtual address: " << prog_headers[i].v_addr
+                << "  Physical address: " << prog_headers[i].p_addr
+                << "  Size in file: " << prog_headers[i].size_in_file
+                << "  Size in memory: " << prog_headers[i].size_in_mem
+                << "  Alignment: " << prog_headers[i].align;
+        }
     }
+
+    /* Get the ELF file entry point from the ELF header */
+    void Parser_64b::parse_elf_header() {
+        file.seekg(0x10, std::ios::beg);
+        file.read(reinterpret_cast<char*>(&elf_header.e_type), 2);
+        file.read(reinterpret_cast<char*>(&elf_header.e_isa), 2);
+
+        file.seekg(0x18, std::ios::beg);
+        file.read(reinterpret_cast<char*>(&elf_header.e_entry), 8);
+        file.read(reinterpret_cast<char*>(&ph_data.offset), 8);
+        file.read(reinterpret_cast<char*>(&sh_data.offset), 8);
+
+        file.seekg(0x36, std::ios::beg);
+        file.read(reinterpret_cast<char*>(&ph_data.entry_size), 2);
+        file.read(reinterpret_cast<char*>(&ph_data.entry_count), 2);
+        file.read(reinterpret_cast<char*>(&sh_data.entry_size), 2);
+        file.read(reinterpret_cast<char*>(&sh_data.entry_count), 2);
+    }
+
+    /* Get the program header data */
+    void Parser_64b::parse_prog_headers() {
+        for (uint16_t i = 0; i < ph_data.entry_count; i++) {
+            struct ph_table_ent ph_ent;
+
+            file.seekg(ph_data.offset + i * ph_data.entry_size, std::ios::beg);
+            file.read(reinterpret_cast<char*>(&ph_ent.type), 4);
+            file.read(reinterpret_cast<char*>(&ph_ent.flags), 4);
+            file.read(reinterpret_cast<char*>(&ph_ent.offset), 8);
+            file.read(reinterpret_cast<char*>(&ph_ent.v_addr), 8);
+            file.read(reinterpret_cast<char*>(&ph_ent.p_addr), 8);
+            file.read(reinterpret_cast<char*>(&ph_ent.size_in_file), 8);
+            file.read(reinterpret_cast<char*>(&ph_ent.size_in_mem), 8);
+            file.read(reinterpret_cast<char*>(&ph_ent.align), 8);
+
+            prog_headers.push_back(ph_ent);
+        }
+    }
+
+    /* Get the actual data from the segment a program header is pointing at*/
+    void Parser_64b::get_segment_data(uint64_t* buff, const uint16_t i) {
+        if (buff == nullptr) {
+            std::cerr << "buff is nullptr\n";
+            return;
+        }
+
+        file.seekg(prog_headers[i].offset, std::ios::beg);
+        file.read((char*)(buff), prog_headers[i].size_in_file);
+    };
 }

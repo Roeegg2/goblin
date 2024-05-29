@@ -8,9 +8,9 @@
 namespace Roee_ELF {
 
     struct loaded_segment {
-        uint64_t virtual_addr;
+        uint64_t v_addr;
         uint64_t size_in_mem;
-        uint64_t* data_buff;
+        uint64_t* buff;
     };
     class Runner final {
     public:
@@ -19,6 +19,7 @@ namespace Roee_ELF {
 
     private:
         void map_segments(void);
+        uint64_t* alloc_seg_buff(const uint16_t i) const;
 
     private:
         Parser_64b* parser;

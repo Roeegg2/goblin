@@ -26,40 +26,48 @@ namespace Roee_ELF {
         PT_GNUPROPERTY = 0x6474e553,
     };
 
-    struct prog_header {
-        std::string type;
-        char flags[4] = { '.', '.', '.', '\0' };
-        uint64_t offset; // offset within the file of where the actual segment data resides
-        uint64_t virtual_addr; // segments base virtual address
-        uint64_t physical_addr; // segments base physical address
-        uint64_t size_in_file; // size of the segment in the file
-        uint64_t size_in_mem; // size of the segment in memory
-        uint64_t align;
+    struct ph_sh_data {
+        uint64_t offset; // section/program header table's file offset
+        uint16_t entry_size; // size of each section/program header table entry
+        uint16_t entry_count; // number of entries in the section/program header table
+    };
+
+    struct ph_table_ent {
+        uint32_t type; // type of segment
+        uint32_t flags; // segment attributes
+        uint64_t offset; // offset in file
+        uint64_t v_addr; // virtual address in memory
+        uint64_t p_addr; // physical address in memory (mostly unused)
+        uint64_t size_in_file; // size of segment in file
+        uint64_t size_in_mem; // size of segment in memory
+        uint64_t align; // alignment
     };
 
     class Parser_64b final {
     public:
         Parser_64b(std::ifstream& file);
-        void parse_isa(void);
-        void parse_file_type(void);
-        void parse_entry_point(void);
+
+        void print_isa(void) const;
+        void print_file_type(void) const;
+        void print_ph_type(const uint8_t i) const;
+        void print_ph(void) const;
+
         void parse_prog_headers(void);
-
-        uint64_t* get_code(void) const;
-        void get_data_info(uint64_t* virtual_addr, uint64_t* size_in_mem, uint64_t** data_buff);
-    private:
-        void parse_prog_header_flags(const uint8_t i);
-        void parse_prog_header_type(const uint8_t i);
-#ifdef DEBUG
-        void print_prog_header(const struct prog_header& ph) const;
-#endif
-
+        void parse_elf_header(void);
+        void get_segment_data(uint64_t* buff, const uint16_t i);
     public:
         std::ifstream& file;
-        uint16_t isa;
-        uint16_t file_type;
-        uint64_t entry_point;
-        std::vector<struct prog_header> prog_headers;
+
+        struct {
+            uint64_t e_entry; // entry point
+            uint16_t e_type; // file type
+            uint16_t e_isa; // instruction set architecture
+        } elf_header;
+
+        struct ph_sh_data sh_data;
+        struct ph_sh_data ph_data;
+
+        std::vector<struct ph_table_ent> prog_headers;
     };
 
 }
