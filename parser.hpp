@@ -41,35 +41,57 @@ namespace Roee_ELF {
         uint64_t size_in_file; // size of segment in file
         uint64_t size_in_mem; // size of segment in memory
         uint64_t align; // alignment
+        void* data; // segment data
+    };
+
+    struct sh_table_ent {
+        uint32_t name; // offset into the .shstrtab section
+        uint32_t type; // type of section
+        uint64_t flags; // section attributes
+        uint64_t addr; // virtual address in memory
+        uint64_t offset; // offset in file
+        uint64_t size; // size of section
+        uint32_t link; // index of a related section
+        uint32_t info; // depends on section type
+        uint64_t align; // alignment
+        uint64_t entry_size; // size of each entry if section holds a table
     };
 
     class Parser_64b final {
     public:
-        Parser_64b(std::ifstream& file);
+        Parser_64b(const char* file_name);
+        void parse_elf_header(void);
+        void parse_prog_headers(void);
+        void get_segment_data(const uint16_t i);
 
+        inline void check_elf_header_magic(void);
+        inline void check_elf_header_class(void);
+        inline void read_elf_header_data(uint16_t offset, uint8_t size, void* data);
+
+#ifdef DEBUG
+        void print_file_info(void) const;
         void print_isa(void) const;
         void print_file_type(void) const;
         void print_ph_type(const uint8_t i) const;
         void print_ph(void) const;
+#endif
 
-        void parse_prog_headers(void);
-        void parse_elf_header(void);
-        void get_segment_data(uint64_t* buff, const uint16_t i);
+    private:
+        std::ifstream file;
+
     public:
-        std::ifstream& file;
+        struct ph_sh_data sh_data; // section header table data
+        struct ph_sh_data ph_data; // program header table data
 
         struct {
-            uint64_t e_entry; // entry point
-            uint16_t e_type; // file type
-            uint16_t e_isa; // instruction set architecture
+            uint8_t endianness;
+            uint8_t isa;
+            uint16_t file_type;
+            uint64_t entry_point;
         } elf_header;
-
-        struct ph_sh_data sh_data;
-        struct ph_sh_data ph_data;
 
         std::vector<struct ph_table_ent> prog_headers;
     };
-
 }
 
 #endif

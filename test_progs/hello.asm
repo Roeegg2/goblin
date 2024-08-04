@@ -1,7 +1,7 @@
 global _start
 
 section .data
-    msg db 'Hello, World!', 0
+    msg db 'yooooo my broda', 0
 
 section .text
 _start:

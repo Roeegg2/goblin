@@ -8,13 +8,14 @@
 using namespace Roee_ELF;
 
 int main(int argc, char** argv) {
-    std::ifstream file("test_progs/hello", std::ios::in | std::ios::binary);
+    Parser_64b* const parsed_info = new Parser_64b("test_progs/test3_stdlib");
+    Runner* const runner = new Runner(parsed_info);
 
-    Parser_64b* const parser = new Parser_64b(file);
-    Runner* const runner = new Runner(parser);
-
-    parser->parse_elf_header();
-    parser->parse_prog_headers();
+    parsed_info->parse_elf_header();
+    parsed_info->parse_prog_headers();
+#ifdef DEBUG
+    parsed_info->print_file_info();
+#endif
 
     runner->run();
 
