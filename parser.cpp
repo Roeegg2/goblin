@@ -8,7 +8,12 @@
 #include <sys/mman.h>
 
 namespace Roee_ELF {
+
     Parser_64b::Parser_64b(const char* file_name) {
+        init(file_name);
+    }
+
+    void Parser_64b::init(const char* file_name) {
         fd = syscall_open(file_name, 0x2, 0);
 
         if (fd < -1) {
@@ -222,10 +227,10 @@ namespace Roee_ELF {
 
     /* Get the program header data */
     void Parser_64b::parse_prog_headers(void) {
-        // prog_headers.reserve(ph_data.entry_count);
-        prog_headers = new ph_table_ent[ph_data.entry_count];
+        prog_headers = reinterpret_cast<struct ph_table_ent*>(syscall_mmap(0x0, ph_data.entry_count * sizeof(ph_table_ent), 
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
         for (u16 i = 0; i < ph_data.entry_count; i++) {
-            // file.seekg(ph_data.offset + i * ph_data.entry_size, std::ios::beg);
             syscall_lseek(fd, ph_data.offset + i * ph_data.entry_size, 0);
 
             syscall_read(fd, reinterpret_cast<char*>(&prog_headers[i].type), 4); // segment type
@@ -246,25 +251,26 @@ namespace Roee_ELF {
             return;
         }
 
-        if (prog_headers[i].type == PT_LOAD) {
             // prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem, 
                 // elf_perm_to_mmap_perms(prog_headers[i].flags), 0x22, fd, prog_headers[i].offset)); // mmapping with PROT_WRITE because we're going to write to it
             
+        if (prog_headers[i].type == PT_LOAD) {
             prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem, 
                 PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)); // mmapping with PROT_WRITE because we're going to write to it
-            
-            if (prog_headers[i].data == MAP_FAILED) {
-                syscall_write(2, "mmap failed\n", 12);
-                syscall_exit(1);
-            }
         } else {
-            prog_headers[i].data = new char[prog_headers[i].size_in_file];
+            prog_headers[i].data = reinterpret_cast<void*>(0x0, prog_headers[i].size_in_mem, 
+                PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); // mmapping with PROT_WRITE because we're going to write to it
+        }
+
+        if (prog_headers[i].data == MAP_FAILED) {
+            syscall_write(2, "mmap failed\n", 12);
+            syscall_exit(1);
         }
 
         syscall_lseek(fd, prog_headers[i].offset, 0);
         syscall_read(fd, reinterpret_cast<char*>(prog_headers[i].data), prog_headers[i].size_in_file);
 
-        if (mprotect(prog_headers[i].data, prog_headers[i].size_in_mem, 
+        if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem, 
                 elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
             syscall_write(2, "mprotect failed\n", 16);
             syscall_exit(1);

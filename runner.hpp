@@ -7,6 +7,7 @@ namespace Roee_ELF {
     class Runner final {
     public:
         Runner(Parser_64b* const parser);
+        void init(Parser_64b* const parser);
         void run(void);
 
     private:
