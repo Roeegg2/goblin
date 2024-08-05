@@ -3,9 +3,6 @@
 
 #include "parser.hpp"
 
-#include <fstream>
-#include <vector>
-
 namespace Roee_ELF {
     class Runner final {
     public:

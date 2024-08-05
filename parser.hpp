@@ -1,10 +1,7 @@
 #ifndef PARSER_HPP
 #define PARSER_HPP
 
-#include <cstdint>
-#include <fstream>
-#include <vector>
-#include <string>
+#include "types.hpp"
 
 namespace Roee_ELF {
     enum PROG_HEADER_TYPE {
@@ -27,34 +24,34 @@ namespace Roee_ELF {
     };
 
     struct ph_sh_data {
-        uint64_t offset; // section/program header table's file offset
-        uint16_t entry_size; // size of each section/program header table entry
-        uint16_t entry_count; // number of entries in the section/program header table
+        u64 offset; // section/program header table's file offset
+        u16 entry_size; // size of each section/program header table entry
+        u16 entry_count; // number of entries in the section/program header table
     };
 
     struct ph_table_ent {
-        uint32_t type; // type of segment
-        uint32_t flags; // segment attributes
-        uint64_t offset; // offset in file
-        uint64_t v_addr; // virtual address in memory
-        uint64_t p_addr; // physical address in memory (mostly unused)
-        uint64_t size_in_file; // size of segment in file
-        uint64_t size_in_mem; // size of segment in memory
-        uint64_t align; // alignment
+        u32 type; // type of segment
+        u32 flags; // segment attributes
+        u64 offset; // offset in file
+        u64 v_addr; // virtual address in memory
+        u64 p_addr; // physical address in memory (mostly unused)
+        u64 size_in_file; // size of segment in file
+        u64 size_in_mem; // size of segment in memory
+        u64 align; // alignment
         void* data; // segment data
     };
 
     struct sh_table_ent {
-        uint32_t name; // offset into the .shstrtab section
-        uint32_t type; // type of section
-        uint64_t flags; // section attributes
-        uint64_t addr; // virtual address in memory
-        uint64_t offset; // offset in file
-        uint64_t size; // size of section
-        uint32_t link; // index of a related section
-        uint32_t info; // depends on section type
-        uint64_t align; // alignment
-        uint64_t entry_size; // size of each entry if section holds a table
+        u32 name; // offset into the .shstrtab section
+        u32 type; // type of section
+        u64 flags; // section attributes
+        u64 addr; // virtual address in memory
+        u64 offset; // offset in file
+        u64 size; // size of section
+        u32 link; // index of a related section
+        u32 info; // depends on section type
+        u64 align; // alignment
+        u64 entry_size; // size of each entry if section holds a table
     };
 
     class Parser_64b final {
@@ -62,35 +59,37 @@ namespace Roee_ELF {
         Parser_64b(const char* file_name);
         void parse_elf_header(void);
         void parse_prog_headers(void);
-        void get_segment_data(const uint16_t i);
+        void get_segment_data(const u16 i);
 
         inline void check_elf_header_magic(void);
         inline void check_elf_header_class(void);
-        inline void read_elf_header_data(uint16_t offset, uint8_t size, void* data);
+        inline void read_elf_header_data(u16 offset, u8 size, void* data);
 
 #ifdef DEBUG
         void print_file_info(void) const;
         void print_isa(void) const;
         void print_file_type(void) const;
-        void print_ph_type(const uint8_t i) const;
+        void print_ph_type(const u8 i) const;
         void print_ph(void) const;
 #endif
 
     private:
-        std::ifstream file;
+        // std::ifstream file;
+        int fd;
 
     public:
         struct ph_sh_data sh_data; // section header table data
         struct ph_sh_data ph_data; // program header table data
 
         struct {
-            uint8_t endianness;
-            uint8_t isa;
-            uint16_t file_type;
-            uint64_t entry_point;
+            u8 endianness;
+            u8 isa;
+            u16 file_type;
+            u64 entry_point;
         } elf_header;
 
-        std::vector<struct ph_table_ent> prog_headers;
+        // std::vector<struct ph_table_ent> prog_headers;
+        struct ph_table_ent* prog_headers;
     };
 }
 
