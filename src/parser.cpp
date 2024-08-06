@@ -2,9 +2,9 @@
 // #include <cstring>
 // #include <sys/mman.h>
 
-#include "parser.hpp"
-#include "utils.hpp"
-#include "syscalls.hpp"
+#include "../include/parser.hpp"
+#include "../include/utils.hpp"
+#include "../include/syscalls.hpp"
 #include <sys/mman.h>
 
 namespace Roee_ELF {
@@ -227,7 +227,7 @@ namespace Roee_ELF {
 
     /* Get the program header data */
     void Parser_64b::parse_prog_headers(void) {
-        prog_headers = reinterpret_cast<struct ph_table_ent*>(syscall_mmap(0x0, ph_data.entry_count * sizeof(ph_table_ent), 
+        prog_headers = reinterpret_cast<struct ph_table_ent*>(syscall_mmap(0x0, ph_data.entry_count * sizeof(ph_table_ent),
             PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
         for (u16 i = 0; i < ph_data.entry_count; i++) {
@@ -251,29 +251,111 @@ namespace Roee_ELF {
             return;
         }
 
-            // prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem, 
+            // prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem,
                 // elf_perm_to_mmap_perms(prog_headers[i].flags), 0x22, fd, prog_headers[i].offset)); // mmapping with PROT_WRITE because we're going to write to it
-            
+
         if (prog_headers[i].type == PT_LOAD) {
-            prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem, 
+            prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem,
                 PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)); // mmapping with PROT_WRITE because we're going to write to it
+
+            if (prog_headers[i].data == MAP_FAILED) {
+                syscall_write(2, "mmap failed\n", 12);
+                syscall_exit(1);
+            }
+
+            syscall_lseek(fd, prog_headers[i].offset, 0);
+            syscall_read(fd, reinterpret_cast<char*>(prog_headers[i].data), prog_headers[i].size_in_file);
+
+            if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem,
+                    elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
+                syscall_write(2, "mprotect failed\n", 16);
+                syscall_exit(1);
+            }
+
         } else {
-            prog_headers[i].data = reinterpret_cast<void*>(0x0, prog_headers[i].size_in_mem, 
-                PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); // mmapping with PROT_WRITE because we're going to write to it
+            // prog_headers[i].data = reinterpret_cast<void*>(0x0, prog_headers[i].size_in_mem,
+                // PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); // mmapping with PROT_WRITE because we're going to write to it
         }
 
-        if (prog_headers[i].data == MAP_FAILED) {
-            syscall_write(2, "mmap failed\n", 12);
-            syscall_exit(1);
-        }
-
-        syscall_lseek(fd, prog_headers[i].offset, 0);
-        syscall_read(fd, reinterpret_cast<char*>(prog_headers[i].data), prog_headers[i].size_in_file);
-
-        if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem, 
-                elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
-            syscall_write(2, "mprotect failed\n", 16);
-            syscall_exit(1);
-        }
     };
+
+    void Parser_64b::parse_sect_headers(void) {
+        sect_headers = reinterpret_cast<struct sh_table_ent*>(syscall_mmap(0x0, sh_data.entry_count * sizeof(sh_table_ent),
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+        for (u16 i = 0; i < sh_data.entry_count; i++) {
+            syscall_lseek(fd, sh_data.offset + i * sh_data.entry_size, 0);
+
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].name), 4); // offset into the .shstrtab section
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].type), 4); // type of section
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].flags), 8); // section attributes
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].addr), 8); // virtual address in memory
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].offset), 8); // offset in file
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].size), 8); // size of section
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].link), 4); // index of a related section
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].info), 4); // depends on section type
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].align), 8); // alignment
+            syscall_read(fd, reinterpret_cast<char*>(&sect_headers[i].entry_size), 8); // size of each entry if section holds a table
+
+            get_section_data(i);
+        }
+    }
+
+    void Parser_64b::get_section_data(const u16 i) {
+        switch(sect_headers[i].type) {
+            case SHT_SYMTAB:
+                symtab_sect_index = i;
+                break;
+            case SHT_STRTAB:
+                strtab_sect_index = i;
+                break;
+            default:
+                sect_headers[i].data = reinterpret_cast<void*>(0x0);
+                goto end;
+        }
+
+        sect_headers[i].data = reinterpret_cast<void*>(syscall_mmap(0x0, sect_headers[i].size,
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+
+        syscall_lseek(fd, sect_headers[i].offset, 0);
+        syscall_read(fd, reinterpret_cast<char*>(sect_headers[i].data), sect_headers[i].size);
+
+    end:
+        return;
+
+    };
+
+    u32 Parser_64b::find_string_table_ent(const char* sym_name, const u32 len) {
+        for (u16 i = 0; i < sect_headers[strtab_sect_index].size; i++) {
+            if (*(reinterpret_cast<char*>(sect_headers[strtab_sect_index].data) + i) == '\0') { // if we reached the end of some string, that means we're at the beginning of the next string
+                if (memcmp(reinterpret_cast<char*>(sect_headers[strtab_sect_index].data + i + 1), sym_name, len) == 0) { // +1 to skip the null byte
+                    return i + 1; // return offset of the string
+                }
+            }
+        }
+
+        syscall_write(2, "Failed to find string table entry\n", 34);
+
+        return 0;
+    }
+
+    u64 Parser_64b::get_symbol_value(const char* sym_name, const u32 len) {
+        u32 sym_name_offset = find_string_table_ent(sym_name, len);
+
+        u64 symbol_count = sect_headers[symtab_sect_index].size / sect_headers[symtab_sect_index].entry_size;
+        for (u16 i = 0; i < symbol_count; i += sect_headers[symtab_sect_index].entry_size) {
+            if (memcmp(reinterpret_cast<char*>(sect_headers[symtab_sect_index].data + i), &sym_name_offset, 4) == 0) { // +0x10 to skip the first 16 bytes of the symbol table entry
+                // u64 symbol_addr;
+                // memcpy(&symbol_addr, reinterpret_cast<char*>(sect_headers[symtab_sect_index].data + i), 8);
+                // return symbol_addr;
+                syscall_write(1, "Found main symbol: ", 19);
+                syscall_write(1, reinterpret_cast<char*>(sect_headers[symtab_sect_index].data + i + 0x10), 8);
+                return *reinterpret_cast<u64*>(sect_headers[symtab_sect_index].data + i + 0x10);
+            }
+        }
+
+        syscall_write(2, "Failed to find main symbol\n", 28);
+
+        return 0;
+    }
 }

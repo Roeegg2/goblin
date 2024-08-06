@@ -1,4 +1,4 @@
-#include "runner.hpp"
+#include "../include/runner.hpp"
 
 namespace Roee_ELF {
     Runner::Runner(Parser_64b* const parser) : parser(parser) {
