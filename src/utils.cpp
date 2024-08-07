@@ -22,4 +22,21 @@ namespace Roee_ELF {
 
         return 0;
     }
+
+    void num_to_str(u64 num, char* buf, u32 digit_nums = 0) {
+        if (digit_nums == 0) { // if number of digits is not specified, calculate it
+            u32 temp = num;
+            while (temp) {
+                temp /= 10;
+                digit_nums++;
+            }
+        }
+
+        for (s32 i = digit_nums-1; i >= 0; i--) {
+            buf[i] = (num % 10) + '0';
+            num /= 10;
+        }
+
+        buf[digit_nums] = '\0';
+    }
 };

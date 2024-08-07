@@ -67,7 +67,8 @@ namespace Roee_ELF {
         u64 size_in_file; // size of segment in file
         u64 size_in_mem; // size of segment in memory
         u64 align; // alignment
-        void* data; // segment data
+
+        void* data; // segment data (not part of the ELF file, but used by the loader)
     };
 
     struct sh_table_ent {
@@ -80,8 +81,9 @@ namespace Roee_ELF {
         u32 link; // index of a related section
         u32 info; // depends on section type
         u64 align; // alignment
-        u64 entry_size; // size of each entry if section holds a table
-        void* data; // section data
+        u64 entry_size; // size of each entry (if section holds a table)
+
+        void* data; // section data (not part of the ELF file, but used by the loader)
     };
 
     class Parser_64b final {
@@ -93,8 +95,7 @@ namespace Roee_ELF {
         void get_section_data(const u16 i);
         void parse_prog_headers(void);
         void parse_sect_headers(void);
-        u64 get_symbol_value(const char* sym_name, const u32 len);
-        u32 find_string_table_ent(const char* sym_name, const u32 len);
+        s64 get_string_offset(const u32 string_table_index, const char* str, const u32 str_len) const;
 
         inline void check_elf_header_magic(void);
         inline void check_elf_header_class(void);
@@ -104,8 +105,12 @@ namespace Roee_ELF {
         void print_file_info(void) const;
         void print_isa(void) const;
         void print_file_type(void) const;
-        void print_ph_type(const u8 i) const;
-        void print_ph(void) const;
+
+        void print_sect_headers(void) const;
+        void print_prog_headers(void) const;
+
+        void print_ph_type(const u16 i) const;
+        void print_sh_type(const u16 i) const;
 #endif
 
     private:
@@ -120,14 +125,17 @@ namespace Roee_ELF {
             u8 isa;
             u16 file_type;
             u64 entry_point;
+            u16 shstrtab_index;
         } elf_header;
 
-        // std::vector<struct ph_table_ent> prog_headers;
         struct ph_table_ent* prog_headers;
         struct sh_table_ent* sect_headers;
 
-        u32 symtab_sect_index;
-        u32 strtab_sect_index;
+        struct {
+            u32 symtab_index;
+            u32 strtab_index;
+            u32 shstrtab_index;
+        } sect_indices;
     };
 }
 

@@ -9,8 +9,8 @@ namespace Roee_ELF {
         this->parser = parser;
     }
 
-    void Runner::run(void) {
-        void (*start_execution)(void) = reinterpret_cast<void(*)()>(parser->elf_header.entry_point); // turn the code segment start into a function ptr
+    void Runner::run(void) { //parser->elf_header.entry_point 0x401655
+        void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x401655); // turn the code segment start into a function ptr
         start_execution(); // execute the code
     }
 }
