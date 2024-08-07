@@ -1,25 +1,25 @@
 #ifndef SYSCALLS_HPP
 #define SYSCALLS_HPP
 
-#include "types.hpp"
+#include <stdint.h>
 
 #ifdef __amd64__
 namespace Roee_ELF {
-    constexpr u8 STDOUT_FD = 1;
-    constexpr u8 STDIN_FD = 2;
-    constexpr u8 STDERR_FD = 3;
+    constexpr uint8_t STDOUT_FD = 1;
+    constexpr uint8_t STDIN_FD = 2;
+    constexpr uint8_t STDERR_FD = 3;
 
-    s64 _syscall(u64 rax, u64 rdi = 0, u64 rsi = 0, u64 rdx = 0, u64 r10 = 0, u64 r8 = 0, u64 r9 = 0);
-    s64 syscall_exit(s32 err_code);
-    s64 syscall_write(u64 fd, const char* buff, u64 count);
-    s64 syscall_read(u64 fd, char* buff, u64 count);
-    s64 syscall_open(const char* filename, u64 flags, u64 mode);
-    s64 syscall_close(u64 fd);
-    s64 syscall_lseek(u64 fd, u64 offset, u64 origin);
-    s64 syscall_mmap(u64 addr, u64 length, u64 prot, u64 flags, u64 fd, u64 offset);
-    s64 syscall_munmap(u64 addr, u64 length);
-    s64 syscall_mprotect(u64 addr, u64 length, u64 prot);
-    s64 syscall_fork(void);
+    int64_t _syscall(uint64_t rax, uint64_t rdi = 0, uint64_t rsi = 0, uint64_t rdx = 0, uint64_t r10 = 0, uint64_t r8 = 0, uint64_t r9 = 0);
+    int64_t syscall_exit(int32_t err_code);
+    int64_t syscall_write(uint64_t fd, const char* buff, uint64_t count);
+    int64_t syscall_read(uint64_t fd, char* buff, uint64_t count);
+    int64_t syscall_open(const char* filename, uint64_t flags, uint64_t mode);
+    int64_t syscall_close(uint64_t fd);
+    int64_t syscall_lseek(uint64_t fd, uint64_t offset, uint64_t origin);
+    int64_t syscall_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, uint64_t fd, uint64_t offset);
+    int64_t syscall_munmap(uint64_t addr, uint64_t length);
+    int64_t syscall_mprotect(uint64_t addr, uint64_t length, uint64_t prot);
+    int64_t syscall_fork(void);
 };
 
 #else

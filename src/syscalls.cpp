@@ -3,10 +3,10 @@
 #include <sys/syscall.h>
 
 namespace Roee_ELF {
-    s64 _syscall(u64 rax, u64 rdi, u64 rsi, u64 rdx, u64 r10, u64 r8, u64 r9) {
-        register u64 r10_val asm("r10") = r10;
-        register u64 r8_val asm("r8") = r8;
-        register u64 r9_val asm("r9") = r9;
+    int64_t _syscall(uint64_t rax, uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t r10, uint64_t r8, uint64_t r9) {
+        register uint64_t r10_val asm("r10") = r10;
+        register uint64_t r8_val asm("r8") = r8;
+        register uint64_t r9_val asm("r9") = r9;
         asm volatile(
             "syscall\n"
             : "=a"(rax)
@@ -18,43 +18,43 @@ namespace Roee_ELF {
     }
 
     /*simple wrapper functions for simplicity*/
-    s64 syscall_exit(s32 err_code) {
+    int64_t syscall_exit(int32_t err_code) {
         return _syscall(SYS_exit, err_code);
     }
 
-    s64 syscall_write(u64 fd, const char* buff, u64 count) {
-        return _syscall(SYS_write, fd, (u64)buff, count);
+    int64_t syscall_write(uint64_t fd, const char* buff, uint64_t count) {
+        return _syscall(SYS_write, fd, (uint64_t)buff, count);
     };
 
-    s64 syscall_read(u64 fd, char* buff, u64 count) {
-        return _syscall(SYS_read, fd, (u64)buff, count);
+    int64_t syscall_read(uint64_t fd, char* buff, uint64_t count) {
+        return _syscall(SYS_read, fd, (uint64_t)buff, count);
     };
 
-    s64 syscall_open(const char* filename, u64 flags, u64 mode) {
-        return _syscall(SYS_open, (u64)filename, flags, mode);
+    int64_t syscall_open(const char* filename, uint64_t flags, uint64_t mode) {
+        return _syscall(SYS_open, (uint64_t)filename, flags, mode);
     };
 
-    s64 syscall_close(u64 fd) {
+    int64_t syscall_close(uint64_t fd) {
         return _syscall(SYS_close, fd);
     };
 
-    s64 syscall_lseek(u64 fd, u64 offset, u64 origin) {
+    int64_t syscall_lseek(uint64_t fd, uint64_t offset, uint64_t origin) {
         return _syscall(SYS_lseek, fd, offset, origin);
     };
 
-    s64 syscall_mmap(u64 addr, u64 length, u64 prot, u64 flags, u64 fd, u64 offset) {
+    int64_t syscall_mmap(uint64_t addr, uint64_t length, uint64_t prot, uint64_t flags, uint64_t fd, uint64_t offset) {
         return _syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
     };
 
-    s64 syscall_munmap(u64 addr, u64 length) {
+    int64_t syscall_munmap(uint64_t addr, uint64_t length) {
         return _syscall(SYS_munmap, addr, length);
     };
 
-    s64 syscall_mprotect(u64 addr, u64 length, u64 prot) {
+    int64_t syscall_mprotect(uint64_t addr, uint64_t length, uint64_t prot) {
         return _syscall(SYS_mprotect, addr, length, prot);
     };
 
-    s64 syscall_fork(void) {
+    int64_t syscall_fork(void) {
         return _syscall(SYS_fork);
     };
 };
