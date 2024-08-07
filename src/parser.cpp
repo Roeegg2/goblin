@@ -14,62 +14,61 @@ namespace Roee_ELF {
         fd = syscall_open(file_name, 0x2, 0);
 
         if (fd < -1) {
-            syscall_write(2, "Failed to open file\n", 20);
+            print_str_literal(STDERR_FD, "Failed to open file\n");
             syscall_exit(1);
         }
     }
 
 #ifdef DEBUG
     void Parser_64b::print_file_info(void) const {
-        syscall_write(1, "ISA: ", 5);
+        print_str_literal(STDOUT_FD, "ISA: ");
         print_isa();
-        syscall_write(1, "File type: ", 11);
+        print_str_literal(STDOUT_FD, "\nFile type: ");
         print_file_type();
-        syscall_write(1, "Entry point: ", 13);
-        syscall_write(1, reinterpret_cast<char*>(elf_header.entry_point), 8);
-        syscall_write(1, "\n", 1);
+        print_str_literal(STDOUT_FD, "\nEntry point: ");
+        print_str_num(STDOUT_FD, elf_header.entry_point, 16);
+        print_str_literal(STDOUT_FD, "\n");
     }
 
     void Parser_64b::print_isa(void) const {
         switch (elf_header.isa) {
             case 0x0:
-                syscall_write(1, "No specific ISA\n", 16);
+                print_str_literal(STDOUT_FD, "No specific ISA");
                 break;
             case 0x2:
-                syscall_write(1, "SPARC\n", 6);
+                print_str_literal(STDOUT_FD, "SPARC");
                 break;
             case 0x3:
-                syscall_write(1, "x86\n", 4);
+                print_str_literal(STDOUT_FD, "x86");
                 break;
             case 0x8:
-                syscall_write(1, "MIPS\n", 5);
+                print_str_literal(STDOUT_FD, "MIPS");
                 break;
             case 0x14:
-                syscall_write(1, "PowerPC\n", 8);
-                break;
+                print_str_literal(STDOUT_FD, "PowerPC");
             case 0x16:
-                syscall_write(1, "S390\n", 5);
+                print_str_literal(STDOUT_FD, "S390");
                 break;
             case 0x28:
-                syscall_write(1, "ARM\n", 4);
+                print_str_literal(STDOUT_FD, "ARM");
                 break;
             case 0x2A:
-                syscall_write(1, "SuperH\n", 7);
+                print_str_literal(STDOUT_FD, "SuperH");
                 break;
             case 0x32:
-                syscall_write(1, "IA-64\n", 6);
+                print_str_literal(STDOUT_FD, "IA-64");
                 break;
             case 0x3E:
-                syscall_write(1, "x86-64\n", 7);
+                print_str_literal(STDOUT_FD, "x86-64");
                 break;
             case 0xB7:
-                syscall_write(1, "AArch64\n", 8);
+                print_str_literal(STDOUT_FD, "AArch64");
                 break;
             case 0xF3:
-                syscall_write(1, "RISC-V\n", 7);
+                print_str_literal(STDOUT_FD, "RISC-V");
                 break;
             default:
-                syscall_write(1, "Other\n", 6);
+                print_str_literal(STDOUT_FD, "Other");
                 break;
 
         }
@@ -78,22 +77,22 @@ namespace Roee_ELF {
     void Parser_64b::print_file_type(void) const {
         switch (elf_header.file_type) {
             case 0x0:
-                syscall_write(1, "No file type\n", 13);
+                print_str_literal(STDOUT_FD, "NONE");
                 break;
             case 0x1:
-                syscall_write(1, "Relocatable\n", 12);
+                print_str_literal(STDOUT_FD, "REL");
                 break;
             case 0x2:
-                syscall_write(1, "Executable\n", 11);
+                print_str_literal(STDOUT_FD, "EXEC");
                 break;
             case 0x3:
-                syscall_write(1, "Shared object\n", 14);
+                print_str_literal(STDOUT_FD, "DYN");
                 break;
             case 0x4:
-                syscall_write(1, "Core dump\n", 10);
+                print_str_literal(STDOUT_FD, "CORE");
                 break;
             default:
-                syscall_write(1, "Other\n", 6);
+                print_str_literal(STDOUT_FD, "OTHER");
                 break;
         }
     }
@@ -101,190 +100,208 @@ namespace Roee_ELF {
     void Parser_64b::print_ph_type(const u16 i) const {
         switch (prog_headers[i].type) {
             case PT_NULL:
-                syscall_write(1, "Unused program header table entry\n", 34);
+                print_str_literal(STDOUT_FD, "NULL");
                 break;
             case PT_LOAD:
-                syscall_write(1, "Loadable segment\n", 17);
+                print_str_literal(STDOUT_FD, "LOAD");
                 break;
             case PT_DYNAMIC:
-                syscall_write(1, "Dynamic linking information\n", 28);
+                print_str_literal(STDOUT_FD, "DYNAMIC");
                 break;
             case PT_INTERP:
-                syscall_write(1, "Interpreter information\n", 25);
+                print_str_literal(STDOUT_FD, "INTERP");
                 break;
             case PT_NOTE:
-                syscall_write(1, "Auxiliary information\n", 22);
+                print_str_literal(STDOUT_FD, "NOTE");
                 break;
             case PT_SHLIB:
-                syscall_write(1, "Reserved\n", 9);
+                print_str_literal(STDOUT_FD, "SHLIB");
                 break;
             case PT_PHDR:
-                syscall_write(1, "Program header table itself\n", 28);
+                print_str_literal(STDOUT_FD, "PHDR");
                 break;
             case PT_TLS:
-                syscall_write(1, "Thread-local storage template\n", 30);
+                print_str_literal(STDOUT_FD, "TLS");
                 break;
             case PT_LOOS:
-                syscall_write(1, "OS specific\n", 11);
+                print_str_literal(STDOUT_FD, "LOOS");
                 break;
             case PT_HIOS:
-                syscall_write(1, "OS specific\n", 11);
+                print_str_literal(STDOUT_FD, "HIOS");
                 break;
             case PT_LOPROC:
-                syscall_write(1, "Processor specific\n", 19);
+                print_str_literal(STDOUT_FD, "LOPROC");
                 break;
             case PT_HIPROC:
-                syscall_write(1, "Processor specific\n", 19);
+                print_str_literal(STDOUT_FD, "HIPROC");
                 break;
             case PT_GNUEH_FRAME:
-                syscall_write(1, "GNU_EH_FRAME\n", 13);
+                print_str_literal(STDOUT_FD, "GNUEH_FRAME");
                 break;
             case PT_GNUSTACK:
-                syscall_write(1, "GNU_STACK\n", 10);
+                print_str_literal(STDOUT_FD, "GNU_STACK");
                 break;
             case PT_GNU_RELRO:
-                syscall_write(1, "GNU_RELRO\n", 10);
+                print_str_literal(STDOUT_FD, "GNU_RELRO");
                 break;
             case PT_GNUPROPERTY:
-                syscall_write(1, "GNU_PROPERTY\n", 13);
+                print_str_literal(STDOUT_FD, "GNU_PROPERTY");
                 break;
             default:
-                syscall_write(1, "Unknown\n", 8);
+                print_str_literal(STDOUT_FD, "Unknown");
                 break;
         }
     }
 
     void Parser_64b::print_prog_headers(void) const {
-        syscall_write(1, "==== Program headers:\n ====", 17);
+        print_str_literal(STDOUT_FD, "==== Program headers: ====");
         for (u8 i = 0; i < ph_data.entry_count; i++) {
-            syscall_write(1, "\n", 1);
-            syscall_write(1, reinterpret_cast<char*>(NUM_ASCII(i)), 1);
-            syscall_write(1, "Type: ", 6);
+            print_str_literal(STDOUT_FD, "\n");
+
+            print_str_literal(STDOUT_FD, "\nType: ");
             print_ph_type(i);
-            syscall_write(1, "Offset: ", 8);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].offset), 8);
-            syscall_write(1, "Virtual address: ", 17);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].v_addr), 8);
-            syscall_write(1, "Physical address: ", 18);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].p_addr), 8);
-            syscall_write(1, "File size: ", 11);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].size_in_file), 8);
-            syscall_write(1, "Memory size: ", 13);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].size_in_mem), 8);
-            syscall_write(1, "Flags: ", 7);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].flags), 8);
-            syscall_write(1, "Alignment: ", 11);
-            syscall_write(1, reinterpret_cast<char*>(prog_headers[i].align), 8);
-            syscall_write(1, "\n", 1);
+
+            print_str_literal(STDOUT_FD, "\nOffset: ");
+            print_str_num(STDOUT_FD, prog_headers[i].offset, 16);
+
+            print_str_literal(STDOUT_FD, "\nVirtual address: ");
+            print_str_num(STDOUT_FD, prog_headers[i].v_addr, 16);
+
+            print_str_literal(STDOUT_FD, "\nPhysical address: ");
+            print_str_num(STDOUT_FD, prog_headers[i].p_addr, 16);
+
+            print_str_literal(STDOUT_FD, "\nFile size: ");
+            print_str_num(STDOUT_FD, prog_headers[i].size_in_file, 16);
+
+            print_str_literal(STDOUT_FD, "\nMemory size: ");
+            print_str_num(STDOUT_FD, prog_headers[i].size_in_mem, 16);
+
+            print_str_literal(STDOUT_FD, "\nFlags: ");
+            print_str_num(STDOUT_FD, prog_headers[i].flags, 2);
+
+            print_str_literal(STDOUT_FD, "\nAlignment: ");
+            print_str_num(STDOUT_FD, prog_headers[i].align, 16);
+
+            print_str_literal(STDOUT_FD, "\n");
         }
-        syscall_write(1, "\n", 1);
+        print_str_literal(STDOUT_FD, "\n");
     }
 
     void Parser_64b::print_sh_type(const u16 i) const {
         switch(sect_headers[i].type) {
             case SHT_NULL:
-                syscall_write(1, "NULL\n", 5);
+                print_str_literal(STDOUT_FD, "NULL");
                 break;
             case SHT_PROGBITS:
-                syscall_write(1, "PROGBITS\n", 9);
+                print_str_literal(STDOUT_FD, "PROGBITS");
                 break;
             case SHT_SYMTAB:
-                syscall_write(1, "SYMTAB\n", 7);
+                print_str_literal(STDOUT_FD, "SYMTAB");
                 break;
             case SHT_STRTAB:
-                syscall_write(1, "STRTAB\n", 7);
+                print_str_literal(STDOUT_FD, "STRTAB");
                 break;
             case SHT_RELA:
-                syscall_write(1, "RELA\n", 5);
+                print_str_literal(STDOUT_FD, "RELA");
                 break;
             case SHT_HASH:
-                syscall_write(1, "HASH\n", 5);
+                print_str_literal(STDOUT_FD, "HASH");
                 break;
             case SHT_DYNAMIC:
-                syscall_write(1, "DYNAMIC\n", 8);
+                print_str_literal(STDOUT_FD, "DYNAMIC");
                 break;
             case SHT_NOTE:
-                syscall_write(1, "NOTE\n", 5);
+                print_str_literal(STDOUT_FD, "NOTE");
                 break;
             case SHT_NOBITS:
-                syscall_write(1, "NOBITS\n", 7);
+                print_str_literal(STDOUT_FD, "NOBITS");
                 break;
             case SHT_REL:
-                syscall_write(1, "REL\n", 4);
+                print_str_literal(STDOUT_FD, "REL");
                 break;
             case SHT_SHLIB:
-                syscall_write(1, "SHLIB\n", 6);
+                print_str_literal(STDOUT_FD, "SHLIB");
                 break;
             case SHT_DYNSYM:
-                syscall_write(1, "DYNSYM\n", 7);
+                print_str_literal(STDOUT_FD, "DYNSYM");
                 break;
             case SHT_INIT_ARRAY:
-                syscall_write(1, "INIT_ARRAY\n", 11);
+                print_str_literal(STDOUT_FD, "INIT_ARRAY");
                 break;
             case SHT_FINI_ARRAY:
-                syscall_write(1, "FINI_ARRAY\n", 11);
+                print_str_literal(STDOUT_FD, "FINI_ARRAY");
                 break;
             case SHT_PREINIT_ARRAY:
-                syscall_write(1, "PREINIT_ARRAY\n", 14);
+                print_str_literal(STDOUT_FD, "PREINIT_ARRAY");
                 break;
             case SHT_GROUP:
-                syscall_write(1, "GROUP\n", 6);
+                print_str_literal(STDOUT_FD, "GROUP");
                 break;
             case SHT_SYMTAB_SHNDX:
-                syscall_write(1, "SYMTAB_SHNDX\n", 13);
+                print_str_literal(STDOUT_FD, "SYMTAB_SHNDX");
                 break;
             case SHT_LOOS:
-                syscall_write(1, "OS specific\n", 11);
+                print_str_literal(STDOUT_FD, "OS specific");
                 break;
             case SHT_HIOS:
-                syscall_write(1, "OS specific\n", 11);
+                print_str_literal(STDOUT_FD, "OS specific");
                 break;
             case SHT_LOPROC:
-                syscall_write(1, "Processor specific\n", 19);
+                print_str_literal(STDOUT_FD, "Processor specific");
                 break;
             case SHT_HIPROC:
-                syscall_write(1, "Processor specific\n", 19);
+                print_str_literal(STDOUT_FD, "Processor specific");
                 break;
             case SHT_LOUSER:
-                syscall_write(1, "User specific\n", 14);
+                print_str_literal(STDOUT_FD, "User specific");
                 break;
             case SHT_HIUSER:
-                syscall_write(1, "User specific\n", 14);
+                print_str_literal(STDOUT_FD, "User specific");
                 break;
             default:
-                syscall_write(1, "Other\n", 6);
+                print_str_literal(STDOUT_FD, "Other");
                 break;
         }
     }
 
     void Parser_64b::print_sect_headers(void) const {
-        syscall_write(1, "==== Section headers:\n ====", 17);
+        print_str_literal(STDOUT_FD, "==== Section headers: ====");
         for (u8 i = 0; i < sh_data.entry_count; i++) {
-            syscall_write(1, "\n", 1);
-            syscall_write(1, reinterpret_cast<char*>(NUM_ASCII(i)), 1);
-            syscall_write(1, "Name: ", 6);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].name), 8);
-            syscall_write(1, "Type: ", 6);
+            print_str_literal(STDOUT_FD, "\n");
+
+            print_str_literal(STDOUT_FD, "Name: ");
+            // print_str(STDOUT_FD, sect_headers[i].name);
+
+            print_str_literal(STDOUT_FD, "\nType: ");
             print_sh_type(i);
-            syscall_write(1, "Flags: ", 7);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].flags), 8);
-            syscall_write(1, "Address: ", 9);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].addr), 8);
-            syscall_write(1, "Offset: ", 8);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].offset), 8);
-            syscall_write(1, "Size: ", 6);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].size), 8);
-            syscall_write(1, "Link: ", 6);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].link), 8);
-            syscall_write(1, "Info: ", 6);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].info), 8);
-            syscall_write(1, "Address alignment: ", 19);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].align), 8);
-            syscall_write(1, "Entry size: ", 12);
-            syscall_write(1, reinterpret_cast<char*>(sect_headers[i].entry_size), 8);
-            syscall_write(1, "\n", 1);
+
+            print_str_literal(STDOUT_FD, "\nFlags: ");
+            print_str_num(STDOUT_FD, sect_headers[i].flags, 2);
+
+            print_str_literal(STDOUT_FD, "\nAddress: ");
+            print_str_num(STDOUT_FD, sect_headers[i].addr, 16);
+
+            print_str_literal(STDOUT_FD, "\nOffset: ");
+            print_str_num(STDOUT_FD, sect_headers[i].offset, 16);
+
+            print_str_literal(STDOUT_FD, "\nSize: ");
+            print_str_num(STDOUT_FD, sect_headers[i].size, 16);
+
+            print_str_literal(STDOUT_FD, "\nLink: ");
+            print_str_num(STDOUT_FD, sect_headers[i].link, 16);
+
+            print_str_literal(STDOUT_FD, "\nInfo: ");
+            print_str_num(STDOUT_FD, sect_headers[i].info, 16);
+
+            print_str_literal(STDOUT_FD, "\nAddress alignment: ");
+            print_str_num(STDOUT_FD, sect_headers[i].align, 16);
+
+            print_str_literal(STDOUT_FD, "\nEntry size: ");
+            print_str_num(STDOUT_FD, sect_headers[i].entry_size, 16);
+
+            print_str_literal(STDOUT_FD, "\n");
         }
-        syscall_write(1, "\n", 1);
+        print_str_literal(STDOUT_FD, "\n");
     }
 #endif
 
@@ -293,7 +310,7 @@ namespace Roee_ELF {
         read_elf_header_data(0x0, 4, &magic);
 
         if (memcmp(&magic, "\x7F\x45\x4C\x46", 4) != 0) {
-            syscall_write(2, "Not an ELF file\n", 16);
+            print_str_literal(STDERR_FD, "Not an ELF file\n");
             syscall_exit(1);
         }
     }
@@ -303,7 +320,7 @@ namespace Roee_ELF {
         read_elf_header_data(0x4, 1, &byte_class);
 
         if (byte_class != 0x2) {
-            syscall_write(2, "ELF file isn't 64 bit. This loader only supports 64 bit.\n", 58);
+            print_str_literal(STDERR_FD, "ELF file isn't 64 bit. This loader only supports 64 bit.\n");
             syscall_exit(1);
         }
     }
@@ -361,16 +378,16 @@ namespace Roee_ELF {
                 PROT_WRITE, MAP_PRIVATE, fd, prog_headers[i].offset));
 
         if (prog_headers[i].data == MAP_FAILED) {
-            syscall_write(2, "mmap failed\n", 12);
+            print_str_literal(STDERR_FD, "mmap failed\n");
             syscall_exit(1);
         }
 
         if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem,
                 elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
-            syscall_write(2, "mprotect failed\n", 16);
+            print_str_literal(STDERR_FD, "mprotect failed\n");
             syscall_exit(1);
         }
-    };
+    }
 
     void Parser_64b::parse_sect_headers(void) {
         sect_headers = reinterpret_cast<struct sh_table_ent*>(syscall_mmap(0x0, sh_data.entry_count * sizeof(sh_table_ent),
@@ -428,4 +445,4 @@ namespace Roee_ELF {
         //     syscall_exit(1);
         // }
     // }
-}
+};

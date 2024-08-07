@@ -22,12 +22,12 @@ namespace Roee_ELF {
         return _syscall(SYS_exit, err_code);
     }
 
-    s64 syscall_write(u64 fd, const char* buf, u64 count) {
-        return _syscall(SYS_write, fd, (u64)buf, count);
+    s64 syscall_write(u64 fd, const char* buff, u64 count) {
+        return _syscall(SYS_write, fd, (u64)buff, count);
     };
 
-    s64 syscall_read(u64 fd, char* buf, u64 count) {
-        return _syscall(SYS_read, fd, (u64)buf, count);
+    s64 syscall_read(u64 fd, char* buff, u64 count) {
+        return _syscall(SYS_read, fd, (u64)buff, count);
     };
 
     s64 syscall_open(const char* filename, u64 flags, u64 mode) {
