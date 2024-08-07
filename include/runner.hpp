@@ -11,7 +11,11 @@ namespace Roee_ELF {
         void run(void);
 
     private:
+        void map_segment_data_to_mem(const u8 i);
+
+        private:
         Parser_64b* parser;
+        void (*start_execution)(void);
     };
 }
 

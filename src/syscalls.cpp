@@ -53,4 +53,8 @@ namespace Roee_ELF {
     s64 syscall_mprotect(u64 addr, u64 length, u64 prot) {
         return _syscall(SYS_mprotect, addr, length, prot);
     };
+
+    s64 syscall_fork(void) {
+        return _syscall(SYS_fork);
+    };
 };

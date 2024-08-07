@@ -364,30 +364,30 @@ namespace Roee_ELF {
             syscall_read(fd, reinterpret_cast<char*>(&prog_headers[i].size_in_file), 8); // size of segment in file
             syscall_read(fd, reinterpret_cast<char*>(&prog_headers[i].size_in_mem), 8); // size of segment in memory
             syscall_read(fd, reinterpret_cast<char*>(&prog_headers[i].align), 8); // alignment
-            get_segment_data(i);
+            // get_segment_data(i);
         }
     }
 
     /* Get the actual data from the segment a program header is pointing at*/
-    void Parser_64b::get_segment_data(const u16 i) {
-        if (prog_headers[i].size_in_file == 0) { // segment has no data to read
-            return;
-        }
+    // void Parser_64b::map_segment_data(const u16 i) {
+    //     if (prog_headers[i].size_in_file == 0) { // segment has no data to read
+    //         return;
+    //     }
 
-        prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem,
-                PROT_WRITE, MAP_PRIVATE, fd, prog_headers[i].offset));
+    //     prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem,
+    //             PROT_WRITE, MAP_PRIVATE, fd, prog_headers[i].offset));
 
-        if (prog_headers[i].data == MAP_FAILED) {
-            print_str_literal(STDERR_FD, "mmap failed\n");
-            syscall_exit(1);
-        }
+    //     if (prog_headers[i].data == MAP_FAILED) {
+    //         print_str_literal(STDERR_FD, "mmap failed\n");
+    //         syscall_exit(1);
+    //     }
 
-        if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem,
-                elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
-            print_str_literal(STDERR_FD, "mprotect failed\n");
-            syscall_exit(1);
-        }
-    }
+    //     if (syscall_mprotect(reinterpret_cast<u64>(prog_headers[i].data), prog_headers[i].size_in_mem,
+    //             elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
+    //         print_str_literal(STDERR_FD, "mprotect failed\n");
+    //         syscall_exit(1);
+    //     }
+    // }
 
     void Parser_64b::parse_sect_headers(void) {
         sect_headers = reinterpret_cast<struct sh_table_ent*>(syscall_mmap(0x0, sh_data.entry_count * sizeof(sh_table_ent),

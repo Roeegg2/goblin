@@ -91,7 +91,6 @@ namespace Roee_ELF {
         Parser_64b(const char* file_name);
         void init(const char* file_name);
         void parse_elf_header(void);
-        void get_segment_data(const u16 i);
         void get_section_data(const u16 i);
         void parse_prog_headers(void);
         void parse_sect_headers(void);
@@ -113,10 +112,8 @@ namespace Roee_ELF {
         void print_sh_type(const u16 i) const;
 #endif
 
-    private:
-        int fd;
-
     public:
+        int fd;
         struct ph_sh_data sh_data; // section header table data
         struct ph_sh_data ph_data; // program header table data
 

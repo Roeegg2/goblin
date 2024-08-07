@@ -24,7 +24,7 @@ namespace Roee_ELF {
         return 0;
     }
 
-    void num_to_str(u64 num, char* buff, u32 digit_num = 0, const u8 base = 10) {
+    void num_to_str(u64 num, char* buff, u32 digit_num, const u8 base) {
         if (digit_num == 0) { // if number of digits is not specified, calculate it
             digit_num = get_digit_num(num, base);
         }
@@ -41,7 +41,7 @@ namespace Roee_ELF {
         // buff[digit_num] = '\0';
     }
 
-    u64 get_digit_num(u64 num, const u8 base = 10) {
+    u64 get_digit_num(u64 num, const u8 base) {
         u32 len = 0;
         do {
             num /= base;
@@ -51,7 +51,7 @@ namespace Roee_ELF {
         return len;
     }
 
-    void print_str_num(const s32 fd, const u64 num, const u8 base = 10) {
+    void print_str_num(const s32 fd, const u64 num, const u8 base) {
         u64 digit_num = get_digit_num(num, base);
         char buff[digit_num];
         // memset(buff, sizeof(char), digit_num);
@@ -68,13 +68,11 @@ namespace Roee_ELF {
         syscall_write(fd, buff, digit_num);
     }
 
-    void memset(void *s, const u64 size_of, const u64 n) {
+    void memset(void *s, const u8 val, const u64 n) {
         u64 i = 0;
         while (i < n) {
-            for (u8 j = 0; j < size_of; j++) {
-                reinterpret_cast<u8*>(s)[i+j] = 0;
-            }
-            i += size_of;
+            reinterpret_cast<u8*>(s)[i] = val;
+            i++;
         }
     }
 };
