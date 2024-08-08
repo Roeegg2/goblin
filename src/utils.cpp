@@ -1,6 +1,7 @@
 #include "../include/utils.hpp"
 #include "../include/syscalls.hpp"
 
+#include <cstdint>
 #include <sys/mman.h>
 
 namespace Roee_ELF {
@@ -73,6 +74,12 @@ namespace Roee_ELF {
         while (i < n) {
             reinterpret_cast<uint8_t*>(s)[i] = val;
             i++;
+        }
+    }
+
+    void memcpy(void* s1, void* s2, const uint64_t n) {
+        for (uint64_t i = 0; i < n; i++) {
+            reinterpret_cast<uint8_t*>(s1)[i] = reinterpret_cast<uint8_t*>(s2)[i];
         }
     }
 };

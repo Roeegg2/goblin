@@ -1,7 +1,7 @@
 CC = g++
 SRC = $(wildcard src/*.cpp)
 OBJ = $(SRC:src/%.cpp=bin/%.o)
-FLAGS = -Wall -pedantic -std=c++20 -DDEBUG -g
+FLAGS = -Wall -pedantic -std=c++20 -DDEBUG -g -fPIC
 
 elf: init $(OBJ)
 	$(CC) $(OBJ) -nostdlib -e main -o stupidelf

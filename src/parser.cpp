@@ -16,7 +16,7 @@ namespace Roee_ELF {
         elf_file_fd = syscall_open(file_name, 0x2, 0);
 
         if (elf_file_fd < -1) {
-            print_str_literal(STDERR_FD, "Failed to open file\n");
+            print_str_literal(STDOUT_FD, "Failed to open file\n");
             syscall_exit(1);
         }
     }
@@ -310,7 +310,7 @@ namespace Roee_ELF {
     inline void Parser_64b::check_elf_header_magic(void) { // sizeof(ELFMAG)
         read_elf_header_data(&elf_header.e_ident, SELFMAG, 0x0);
         if (memcmp(elf_header.e_ident, &ELFMAG, SELFMAG) != 0) {
-            print_str_literal(STDERR_FD, "Not an ELF file\n");
+            print_str_literal(STDOUT_FD, "Not an ELF file\n");
             syscall_exit(1);
         }
     }
@@ -318,7 +318,7 @@ namespace Roee_ELF {
     inline void Parser_64b::check_elf_header_class(void) {
         read_elf_header_data(&elf_header.e_ident[EI_CLASS], sizeof(elf_header.e_ident[EI_CLASS]));
         if (elf_header.e_ident[EI_CLASS] != ELFCLASS64) {
-            print_str_literal(STDERR_FD, "ELF file isn't 64 bit. This loader only supports 64 bit.\n");
+            print_str_literal(STDOUT_FD, "ELF file isn't 64 bit. This loader only supports 64 bit.\n");
             syscall_exit(1);
         }
     }
@@ -378,13 +378,13 @@ namespace Roee_ELF {
     //             PROT_WRITE, MAP_PRIVATE, elf_file_fd, prog_headers[i].offset));
 
     //     if (prog_headers[i].data == MAP_FAILED) {
-    //         print_str_literal(STDERR_FD, "mmap failed\n");
+    //         print_str_literal(STDOUT_FD, "mmap failed\n");
     //         syscall_exit(1);
     //     }
 
     //     if (syscall_mprotect(reinterpret_cast<uint64_t>(prog_headers[i].data), prog_headers[i].size_in_mem,
     //             elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
-    //         print_str_literal(STDERR_FD, "mprotect failed\n");
+    //         print_str_literal(STDOUT_FD, "mprotect failed\n");
     //         syscall_exit(1);
     //     }
     // }
