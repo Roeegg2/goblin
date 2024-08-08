@@ -4,14 +4,15 @@
 
 namespace Roee_ELF {
     int64_t _syscall(uint64_t rax, uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t r10, uint64_t r8, uint64_t r9) {
-        register uint64_t r10_val asm("r10") = r10;
-        register uint64_t r8_val asm("r8") = r8;
-        register uint64_t r9_val asm("r9") = r9;
+        register uint64_t r10_reg asm("r10") __attribute__((unused)) = r10;
+        register uint64_t r8_reg asm("r8") __attribute__((unused)) = r8;
+        register uint64_t r9_reg asm("r9") __attribute__((unused)) = r9;
+
         asm volatile(
             "syscall\n"
-            : "=a"(rax)
+            : "=a"(rax)                            // out
             : "a"(rax), "D"(rdi), "S"(rsi), "d"(rdx)
-            : "memory" // syscall might modify memory
+            : "rcx", "r11", "memory"               // clobbers
         );
 
         return rax;

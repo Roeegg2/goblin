@@ -4,56 +4,18 @@
 #include <elf.h>
 
 namespace Roee_ELF {
-    // struct ph_sh_data {
-    //     uint64_t offset; // section/program header table's file offset
-    //     uint16_t entry_size; // size of each section/program header table entry
-    //     uint16_t entry_count; // number of entries in the section/program header table
-    // };
-
-    // struct ph_table_ent {
-    //     uint32_t type; // type of segment
-    //     uint32_t flags; // segment attributes
-    //     uint64_t offset; // offset in file
-    //     uint64_t v_addr; // virtual address in memory
-    //     uint64_t p_addr; // physical address in memory (mostly unused)
-    //     uint64_t size_in_file; // size of segment in file
-    //     uint64_t size_in_mem; // size of segment in memory
-    //     uint64_t align; // alignment
-
-    //     void* data; // segment data (not part of the ELF file, but used by the loader)
-    // };
-
-    // struct sh_table_ent {
-    //     uint32_t name; // offset into the .shstrtab section
-    //     uint32_t type; // type of section
-    //     uint64_t flags; // section attributes
-    //     uint64_t addr; // virtual address in memory
-    //     uint64_t offset; // offset in file
-    //     uint64_t size; // size of section
-    //     uint32_t link; // index of a related section
-    //     uint32_t info; // depends on section type
-    //     uint64_t align; // alignment
-    //     uint64_t entry_size; // size of each entry (if section holds a table)
-
-    //     void* data; // section data (not part of the ELF file, but used by the loader)
-    // };
-
     class Parser_64b final {
     public:
         Parser_64b(const char* file_name);
         void init(const char* file_name);
+        void full_parse(void);
         void parse_elf_header(void);
-        void get_section_data(const uint16_t i);
         void parse_prog_headers(void);
         void parse_sect_headers(void);
-        int64_t get_string_offset(const uint32_t string_table_index, const char* str, const uint32_t str_len) const;
-
-        inline void check_elf_header_magic(void);
-        inline void check_elf_header_class(void);
-
-        void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
+        void get_section_data(const uint16_t i);
 
 #ifdef DEBUG
+        void full_print(void) const;
         void print_file_info(void) const;
         void print_isa(void) const;
         void print_file_type(void) const;
@@ -64,9 +26,14 @@ namespace Roee_ELF {
         void print_ph_type(const uint16_t i) const;
         void print_sh_type(const uint16_t i) const;
 #endif
+    private:
+        inline void check_elf_header_magic(void);
+        inline void check_elf_header_class(void);
+        void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
 
     public:
         int elf_file_fd;
+        const char* elf_file_path;
 
         Elf64_Ehdr elf_header;
         Elf64_Phdr* prog_headers;

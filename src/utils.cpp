@@ -54,7 +54,7 @@ namespace Roee_ELF {
 
     void print_str_num(const int32_t fd, const uint64_t num, const uint8_t base) {
         uint64_t digit_num = get_digit_num(num, base);
-        char buff[digit_num];
+        char* buff = reinterpret_cast<char*>(syscall_mmap(NULL, digit_num, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
         // memset(buff, sizeof(char), digit_num);
         num_to_str(num, buff, digit_num, base);
 
@@ -67,6 +67,8 @@ namespace Roee_ELF {
                 break;
         }
         syscall_write(fd, buff, digit_num);
+
+        syscall_munmap(reinterpret_cast<uint64_t>(buff), digit_num);
     }
 
     void memset(void *s, const uint8_t val, const uint64_t n) {

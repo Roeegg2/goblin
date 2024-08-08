@@ -4,16 +4,17 @@
 
 #include <elf.h>
 #include <sys/mman.h>
+#include <sys/fcntl.h>
 
 namespace Roee_ELF {
 
-    Parser_64b::Parser_64b(const char* file_name) {
-        init(file_name);
-
+    Parser_64b::Parser_64b(const char* file_path) {
+        init(file_path);
     }
 
-    void Parser_64b::init(const char* file_name) {
-        elf_file_fd = syscall_open(file_name, 0x2, 0);
+    void Parser_64b::init(const char* file_path) {
+        elf_file_path = file_path;
+        elf_file_fd = syscall_open(file_path, O_RDONLY, 0);
 
         if (elf_file_fd < -1) {
             print_str_literal(STDOUT_FD, "Failed to open file\n");
@@ -21,7 +22,19 @@ namespace Roee_ELF {
         }
     }
 
+    void Parser_64b::full_parse(void) {
+        parse_elf_header();
+        parse_prog_headers();
+        parse_sect_headers();
+    }
+
 #ifdef DEBUG
+    void Parser_64b::full_print(void) const {
+        print_file_info();
+        print_prog_headers();
+        print_sect_headers();
+    }
+
     void Parser_64b::print_file_info(void) const {
         print_str_literal(STDOUT_FD, "ISA: ");
         print_isa();
@@ -48,6 +61,7 @@ namespace Roee_ELF {
                 break;
             case 0x14:
                 print_str_literal(STDOUT_FD, "PowerPC");
+                break;
             case 0x16:
                 print_str_literal(STDOUT_FD, "S390");
                 break;
@@ -72,7 +86,6 @@ namespace Roee_ELF {
             default:
                 print_str_literal(STDOUT_FD, "Other");
                 break;
-
         }
     }
 
@@ -364,30 +377,8 @@ namespace Roee_ELF {
             syscall_read(elf_file_fd, reinterpret_cast<char*>(&prog_headers[i].p_filesz), 8); // size of segment in file
             syscall_read(elf_file_fd, reinterpret_cast<char*>(&prog_headers[i].p_memsz), 8); // size of segment in memory
             syscall_read(elf_file_fd, reinterpret_cast<char*>(&prog_headers[i].p_align), 8); // alignment
-            // get_segment_data(i);
         }
     }
-
-    /* Get the actual data from the segment a program header is pointing at*/
-    // void Parser_64b::map_segment_data(const uint16_t i) {
-    //     if (prog_headers[i].size_in_file == 0) { // segment has no data to read
-    //         return;
-    //     }
-
-    //     prog_headers[i].data = reinterpret_cast<void*>(syscall_mmap(prog_headers[i].v_addr, prog_headers[i].size_in_mem,
-    //             PROT_WRITE, MAP_PRIVATE, elf_file_fd, prog_headers[i].offset));
-
-    //     if (prog_headers[i].data == MAP_FAILED) {
-    //         print_str_literal(STDOUT_FD, "mmap failed\n");
-    //         syscall_exit(1);
-    //     }
-
-    //     if (syscall_mprotect(reinterpret_cast<uint64_t>(prog_headers[i].data), prog_headers[i].size_in_mem,
-    //             elf_perm_to_mmap_perms(prog_headers[i].flags)) == -1) { // after write, change to the correct permissions
-    //         print_str_literal(STDOUT_FD, "mprotect failed\n");
-    //         syscall_exit(1);
-    //     }
-    // }
 
     void Parser_64b::parse_sect_headers(void) {
         sect_headers = reinterpret_cast<Elf64_Shdr*>(syscall_mmap(0x0, elf_header.e_shnum * sizeof(Elf64_Shdr),
@@ -411,19 +402,6 @@ namespace Roee_ELF {
             // get_section_data(i);
         }
     }
-
-    /* Get the offset associated with "str", if its found in the str table specified by "string_table_index". If the string isn't found, the function returns -1*/
-    // int64_t Parser_64b::get_string_offset(const uint32_t string_table_index, const char* str, const uint32_t str_len) const {
-    //     for (uint32_t i = 0; i < sect_headers[string_table_index].sh_size; i++) {
-    //         if (*(reinterpret_cast<char*>(sect_headers[string_table_index].data) + i) == '\0') { // if this is a start of a new string
-    //             if (memcmp(str, reinterpret_cast<char*>(sect_headers[string_table_index].data) + i + 1, str_len) == 0) {
-    //                 return i; // return the offset of the string
-    //             }
-    //         }
-    //     }
-
-    //     return -1;
-    // }
 
     // void Parser_64b::get_section_data(const uint16_t i) {
     //     static int64_t strtab_offset = get_string_offset(".")
