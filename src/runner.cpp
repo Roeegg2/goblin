@@ -28,8 +28,8 @@ namespace Roee_ELF {
 
     void Runner::map_segment_data_to_mem(const uint8_t i) {
         segment_data[i] = reinterpret_cast<void*>(syscall_mmap(parser->prog_headers[i].p_vaddr,
-            parser->prog_headers[i].p_memsz, elf_perm_to_mmap_perms(parser->prog_headers[i].p_flags),
-            MAP_PRIVATE | MAP_FIXED, parser->elf_file_fd, PAGE_ALIGN_DOWN(parser->prog_headers[i].p_offset)));
+            parser->prog_headers[i].p_memsz, PROT_READ | PROT_WRITE,
+            MAP_PRIVATE, parser->elf_file_fd, PAGE_ALIGN_DOWN(parser->prog_headers[i].p_offset)));
 
         if (segment_data[i] == MAP_FAILED) {
             print_str_literal(STDOUT_FD, "mmap failed\n");
@@ -72,7 +72,7 @@ namespace Roee_ELF {
                 print_str_literal(STDOUT_FD, "Starting execution...\n");
 #endif
                 map_segments();
-                start_execution = reinterpret_cast<void(*)()>(parser->elf_header.e_entry); // turn the code segment start into a function ptr
+                start_execution = reinterpret_cast<void(*)()>(0x401655); // turn the code segment start into a function ptr
                 start_execution(); // execute executable code
                 break;
             default:
