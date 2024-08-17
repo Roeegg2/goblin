@@ -4,7 +4,7 @@
 #include <elf.h>
 
 namespace Roee_ELF {
-    class Parser_64b final {
+    class Parser_64b {
     public:
         Parser_64b(const char* file_name);
         void init(const char* file_name);
@@ -25,8 +25,10 @@ namespace Roee_ELF {
 
         void print_ph_type(const uint16_t i) const;
         void print_sh_type(const uint16_t i) const;
+
+        void print_symtab(void) const;
 #endif
-    private:
+    protected:
         inline void check_elf_header_magic(void);
         inline void check_elf_header_class(void);
         void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
@@ -39,11 +41,9 @@ namespace Roee_ELF {
         Elf64_Phdr* prog_headers;
         Elf64_Shdr* sect_headers;
 
-        struct {
-            uint32_t symtab_index;
-            uint32_t strtab_index;
-            uint32_t shstrtab_index;
-        } sect_indices;
+        Elf64_Sym* symtab_data;
+        char** shstrtab_data;
+        int symtab_index;
     };
 }
 

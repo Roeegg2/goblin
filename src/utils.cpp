@@ -84,4 +84,15 @@ namespace Roee_ELF {
             reinterpret_cast<uint8_t*>(s1)[i] = reinterpret_cast<uint8_t*>(s2)[i];
         }
     }
+
+    void mmap_wrapper(void** ptr, Elf64_Addr addr, Elf64_Xword size, uint64_t prot, uint64_t flags,
+        uint64_t fd, Elf64_Off offset) {
+        *ptr = reinterpret_cast<void*>(syscall_mmap(addr, size,
+            prot, flags, fd, PAGE_ALIGN_DOWN(offset)));
+
+        if (*ptr == MAP_FAILED) {
+            print_str_literal(STDOUT_FD, "mmap failed\n");
+            syscall_exit(1);
+        }
+    }
 };

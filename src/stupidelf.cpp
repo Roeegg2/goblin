@@ -8,15 +8,14 @@
 using namespace Roee_ELF;
 
 int main() {
-    Parser_64b* parser = reinterpret_cast<Parser_64b*>(syscall_mmap(NULL, sizeof(Parser_64b), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
-    Runner* runner = reinterpret_cast<Runner*>(syscall_mmap(NULL, sizeof(Runner), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    Runner* runner;
+    mmap_wrapper(reinterpret_cast<void**>(&runner), NULL, sizeof(Parser_64b), PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    parser->init("tests/chello");
-    runner->init(parser);
-
-    parser->full_parse();
+    runner->init("tests/hello");
+    runner->full_parse();
 #ifdef DEBUG
-    parser->full_print();
+    runner->full_print();
 #endif
     runner->run();
 

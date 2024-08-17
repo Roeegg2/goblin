@@ -2,12 +2,16 @@
 #include "../include/utils.hpp"
 #include "../include/syscalls.hpp"
 
+#include <cstdint>
 #include <elf.h>
 #include <sys/mman.h>
 #include <sys/fcntl.h>
 
-namespace Roee_ELF {
+#define MAP_SEGMENT_DATA(sect_data, sect_index) \
+    mmap_wrapper(reinterpret_cast<void**>(&sect_data), NULL, sect_headers[sect_index].sh_size, PROT_READ, \
+        MAP_PRIVATE, elf_file_fd, sect_headers[sect_index].sh_offset);
 
+namespace Roee_ELF {
     Parser_64b::Parser_64b(const char* file_path) {
         init(file_path);
     }
@@ -33,6 +37,7 @@ namespace Roee_ELF {
         print_file_info();
         print_prog_headers();
         print_sect_headers();
+        // print_symtab();
     }
 
     void Parser_64b::print_file_info(void) const {
@@ -318,6 +323,35 @@ namespace Roee_ELF {
         }
         print_str_literal(STDOUT_FD, "\n");
     }
+
+    void Parser_64b::print_symtab() const {
+        print_str_literal(STDOUT_FD, "==== Symbol table: ====");
+        unsigned int ent_count = sect_headers[symtab_index].sh_size / sect_headers[symtab_index].sh_entsize;
+
+        for (unsigned int i = 0; i < ent_count; i++) {
+            print_str_literal(STDOUT_FD, "\n");
+
+            print_str_literal(STDOUT_FD, "Name: ");
+            // print_str(STDOUT_FD, symtab[i].name);
+
+            print_str_literal(STDOUT_FD, "\nValue: ");
+            print_str_num(STDOUT_FD, symtab_data[i].st_value, 16);
+
+            print_str_literal(STDOUT_FD, "\nSize: ");
+            print_str_num(STDOUT_FD, symtab_data[i].st_size, 16);
+
+            print_str_literal(STDOUT_FD, "\nInfo: ");
+            print_str_num(STDOUT_FD, symtab_data[i].st_info, 16);
+
+            print_str_literal(STDOUT_FD, "\nOther: ");
+            print_str_num(STDOUT_FD, symtab_data[i].st_other, 16);
+
+            print_str_literal(STDOUT_FD, "\nSection index: ");
+            print_str_num(STDOUT_FD, symtab_data[i].st_shndx, 16);
+
+            print_str_literal(STDOUT_FD, "\n");
+        }
+    }
 #endif
 
     inline void Parser_64b::check_elf_header_magic(void) { // sizeof(ELFMAG)
@@ -358,13 +392,13 @@ namespace Roee_ELF {
         read_elf_header_data(&elf_header.e_phnum, sizeof(elf_header.e_phnum), 0x38);
         read_elf_header_data(&elf_header.e_shentsize, sizeof(elf_header.e_shentsize), 0x3a);
         read_elf_header_data(&elf_header.e_shnum, sizeof(elf_header.e_shnum), 0x3c);
-        read_elf_header_data(&elf_header.e_shstrndx, sizeof(sect_indices.shstrtab_index), 0x3e);
+        read_elf_header_data(&elf_header.e_shstrndx, sizeof(elf_header.e_shstrndx), 0x3e);
     }
 
     /* Get the program header data */
     void Parser_64b::parse_prog_headers(void) {
-        prog_headers = reinterpret_cast<Elf64_Phdr*>(syscall_mmap(0x0, elf_header.e_phnum * sizeof(Elf64_Phdr),
-            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        mmap_wrapper(reinterpret_cast<void**>(&prog_headers), NULL, elf_header.e_phnum * sizeof(Elf64_Phdr),
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
         for (uint16_t i = 0; i < elf_header.e_phnum; i++) {
             syscall_lseek(elf_file_fd, elf_header.e_phoff + i * (elf_header.e_phentsize), 0);
@@ -381,9 +415,10 @@ namespace Roee_ELF {
     }
 
     void Parser_64b::parse_sect_headers(void) {
-        sect_headers = reinterpret_cast<Elf64_Shdr*>(syscall_mmap(0x0, elf_header.e_shnum * sizeof(Elf64_Shdr),
-            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        mmap_wrapper(reinterpret_cast<void**>(&sect_headers), NULL, elf_header.e_shnum * sizeof(Elf64_Shdr),
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
+        MAP_SEGMENT_DATA(shstrtab_data, elf_header.e_shstrndx); // getting the .shstrtab section data
         for (uint16_t i = 0; i < elf_header.e_shnum; i++) {
             // syscall_lseek(elf_file_fd, elf.offset + i * sh_data.entry_size, 0);
             syscall_lseek(elf_file_fd, elf_header.e_shoff + (i * elf_header.e_shentsize), 0);
@@ -399,29 +434,43 @@ namespace Roee_ELF {
             syscall_read(elf_file_fd, reinterpret_cast<char*>(&sect_headers[i].sh_addralign), 8); // alignment
             syscall_read(elf_file_fd, reinterpret_cast<char*>(&sect_headers[i].sh_entsize), 8); // size of each entry if section holds a table
 
-            // get_section_data(i);
+            get_section_data(i);
+        }
+    }
+
+    void Parser_64b::get_section_data(const uint16_t i) {
+        switch (sect_headers[i].sh_type) {
+            case SHT_SYMTAB:
+                symtab_index = i;
+                MAP_SEGMENT_DATA(symtab_data, symtab_index)
+                break;
+            // case SHT_STRTAB:
+            //     if (i != elf_header.e_shstrndx) {
+            //         strtab_index = i;
+            //         MAP_SEGMENT_DATA(strtab_data, i)
+            //     }
         }
     }
 
     // void Parser_64b::get_section_data(const uint16_t i) {
     //     static int64_t strtab_offset = get_string_offset(".")
     //     switch()
-        // if (sect_headers[i].size == 0) { // section has no data to read
-        //     return;
-        // }
+    //     if (sect_headers[i].size == 0) { // section has no data to read
+    //         return;
+    //     }
 
-        // sect_headers[i].data = reinterpret_cast<void*>(syscall_mmap(sect_headers[i].addr, sect_headers[i].size,
-        //         PROT_WRITE, MAP_PRIVATE, elf_file_fd, sect_headers[i].offset));
+    //     sect_headers[i].data = reinterpret_cast<void*>(syscall_mmap(sect_headers[i].addr, sect_headers[i].size,
+    //             PROT_WRITE, MAP_PRIVATE, elf_file_fd, sect_headers[i].offset));
 
-        // if (sect_headers[i].data == MAP_FAILED) {
-        //     syscall_write(2, "mmap failed\n", 12);
-        //     syscall_exit(1);
-        // }
+    //     if (sect_headers[i].data == MAP_FAILED) {
+    //         syscall_write(2, "mmap failed\n", 12);
+    //         syscall_exit(1);
+    //     }
 
-        // if (syscall_mprotect(reinterpret_cast<uint64_t>(sect_headers[i].data), sect_headers[i].size,
-        //         elf_perm_to_mmap_perms(sect_headers[i].flags)) == -1) { // after write, change to the correct permissions
-        //     syscall_write(2, "mprotect failed\n", 16);
-        //     syscall_exit(1);
-        // }
+    //     if (syscall_mprotect(reinterpret_cast<uint64_t>(sect_headers[i].data), sect_headers[i].size,
+    //             elf_perm_to_mmap_perms(sect_headers[i].flags)) == -1) { // after write, change to the correct permissions
+    //         syscall_write(2, "mprotect failed\n", 16);
+    //         syscall_exit(1);
+    //     }
     // }
 };
