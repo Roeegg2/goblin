@@ -9,7 +9,7 @@ using namespace Roee_ELF;
 
 int main() {
     Runner* runner;
-    mmap_wrapper(reinterpret_cast<void**>(&runner), NULL, sizeof(Parser_64b), PROT_READ | PROT_WRITE,
+    mmap_wrapper(reinterpret_cast<void**>(&runner), 0x0, sizeof(Parser_64b), PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     runner->init("tests/hello");

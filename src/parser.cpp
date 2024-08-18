@@ -8,8 +8,8 @@
 #include <sys/fcntl.h>
 
 #define MAP_SEGMENT_DATA(sect_data, sect_index) \
-    mmap_wrapper(reinterpret_cast<void**>(&sect_data), NULL, sect_headers[sect_index].sh_size, PROT_READ, \
-        MAP_PRIVATE, elf_file_fd, sect_headers[sect_index].sh_offset);
+    mmap_wrapper(reinterpret_cast<void**>(&sect_data), 0x0, sect_headers[sect_index].sh_size, PROT_READ, \
+        MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
 namespace Roee_ELF {
     Parser_64b::Parser_64b(const char* file_path) {
@@ -397,7 +397,7 @@ namespace Roee_ELF {
 
     /* Get the program header data */
     void Parser_64b::parse_prog_headers(void) {
-        mmap_wrapper(reinterpret_cast<void**>(&prog_headers), NULL, elf_header.e_phnum * sizeof(Elf64_Phdr),
+        mmap_wrapper(reinterpret_cast<void**>(&prog_headers), 0x0, elf_header.e_phnum * sizeof(Elf64_Phdr),
             PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
         for (uint16_t i = 0; i < elf_header.e_phnum; i++) {
@@ -415,7 +415,7 @@ namespace Roee_ELF {
     }
 
     void Parser_64b::parse_sect_headers(void) {
-        mmap_wrapper(reinterpret_cast<void**>(&sect_headers), NULL, elf_header.e_shnum * sizeof(Elf64_Shdr),
+        mmap_wrapper(reinterpret_cast<void**>(&sect_headers), 0x0, elf_header.e_shnum * sizeof(Elf64_Shdr),
             PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
         MAP_SEGMENT_DATA(shstrtab_data, elf_header.e_shstrndx); // getting the .shstrtab section data

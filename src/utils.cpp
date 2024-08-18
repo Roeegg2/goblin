@@ -54,7 +54,7 @@ namespace Roee_ELF {
 
     void print_str_num(const int32_t fd, const uint64_t num, const uint8_t base) {
         uint64_t digit_num = get_digit_num(num, base);
-        char* buff = reinterpret_cast<char*>(syscall_mmap(NULL, digit_num, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        char* buff = reinterpret_cast<char*>(syscall_mmap(0x0, digit_num, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
         // memset(buff, sizeof(char), digit_num);
         num_to_str(num, buff, digit_num, base);
 
@@ -79,16 +79,15 @@ namespace Roee_ELF {
         }
     }
 
-    void memcpy(void* s1, void* s2, const uint64_t n) {
+    void memcpy(void* dest, void* src, uint64_t n) {
         for (uint64_t i = 0; i < n; i++) {
-            reinterpret_cast<uint8_t*>(s1)[i] = reinterpret_cast<uint8_t*>(s2)[i];
+            reinterpret_cast<uint8_t*>(dest)[i] = reinterpret_cast<uint8_t*>(src)[i];
         }
     }
 
     void mmap_wrapper(void** ptr, Elf64_Addr addr, Elf64_Xword size, uint64_t prot, uint64_t flags,
         uint64_t fd, Elf64_Off offset) {
-        *ptr = reinterpret_cast<void*>(syscall_mmap(addr, size,
-            prot, flags, fd, PAGE_ALIGN_DOWN(offset)));
+        *ptr = reinterpret_cast<void*>(syscall_mmap(addr, size, prot, flags, fd, offset));
 
         if (*ptr == MAP_FAILED) {
             print_str_literal(STDOUT_FD, "mmap failed\n");
