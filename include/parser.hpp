@@ -2,12 +2,12 @@
 #define PARSER_HPP
 
 #include <elf.h>
+#include <fstream>
 
 namespace Roee_ELF {
     class Parser_64b {
     public:
         Parser_64b(const char* file_name);
-        void init(const char* file_name);
         void full_parse(void);
         void parse_elf_header(void);
         void parse_prog_headers(void);
@@ -34,16 +34,11 @@ namespace Roee_ELF {
         void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
 
     public:
-        int elf_file_fd;
-        const char* elf_file_path;
+        std::ifstream elf_file;
 
         Elf64_Ehdr elf_header;
         Elf64_Phdr* prog_headers;
         Elf64_Shdr* sect_headers;
-
-        Elf64_Sym* symtab_data;
-        char** shstrtab_data;
-        int symtab_index;
     };
 }
 
