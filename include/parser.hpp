@@ -5,6 +5,8 @@
 #include <fstream>
 
 namespace Roee_ELF {
+    constexpr Elf64_Addr executable_base_addr = 0x400000;
+
     class Parser_64b {
     public:
         Parser_64b(const char* file_name);

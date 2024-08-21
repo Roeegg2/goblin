@@ -1,10 +1,11 @@
 #include "../include/runner.hpp"
 
+#include <algorithm>
+#include <cstring>
+#include <elf.h>
 #include <iostream>
 
 namespace Roee_ELF {
-constexpr Elf64_Addr executable_base_addr = 0x400000;
-
     Runner::Runner(const char* file_path) : Loader(file_path, executable_base_addr){
 
     }
@@ -13,8 +14,86 @@ constexpr Elf64_Addr executable_base_addr = 0x400000;
 
     }
 
-    void Runner::link_external_libs(void){
+    void Runner::resolve_symbols_from_external_lib(Elf64_Sym* lib_dyn_sym, const char* lib_dyn_str, const Elf64_Addr lib_base_addr) {
+        // for (Elf64_Xword i = 0; i < (lib_dyn_sym->st_size / lib_dyn_sym->st_info); i++) {
+        //     if (lib_dyn_sym[i].st_name == 0) {
+        //         continue;
+        //     }
+        //     std::string lib_sym_name = lib_dyn_str + lib_dyn_sym[i].st_name;
+        //     for (auto sym : needed_symbols) {
+        //         std::string org_sym_name = dyn_str + dyn_sym[sym].st_name;
+        //         if (lib_sym_name == org_sym_name) {
+        //             *reinterpret_cast<Elf64_Addr*>(dyn_sym[sym].st_value + load_base_addr) =
+        //                 lib_dyn_sym[i].st_value + lib_base_addr;
 
+        //             needed_symbols.erase(std::remove(needed_symbols.begin(),
+        //                 needed_symbols.end(), sym), needed_symbols.end());
+        //         }
+        //     }
+        // }
+
+        lib_dyn_sym++;
+        // while (*lib_dyn_sym != nullptr) {
+            if (lib_dyn_sym->st_name == 0) {
+                // continue;
+            }
+            std::string lib_sym_name = lib_dyn_str + lib_dyn_sym->st_name;
+            for (auto sym : needed_symbols) {
+                std::string org_sym_name = dyn_str + dyn_sym[sym].st_name;
+                if (lib_sym_name == org_sym_name) {
+                    char* src = reinterpret_cast<char*>(dyn_sym[sym].st_value + load_base_addr);
+                    const char* dst = reinterpret_cast<const char*>(lib_dyn_sym->st_value + lib_base_addr);
+                    strcpy(src, dst);
+
+                    // needed_symbols.erase(std::remove(needed_symbols.begin(),
+                    //     needed_symbols.end(), sym), needed_symbols.end());
+                }
+            }
+            lib_dyn_sym++;
+        // }
+    }
+
+    // void Runner::parse_dyn_sym_section() {
+    //     for (Elf64_Xword i = 0; i < (dyn_sym->st_size / dyn_sym->st_info); i++) {
+    //         Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn_sym->st_value + i * dyn_sym->st_info);
+    //         if (sym->st_name == 0) {
+    //             continue;
+    //         }
+    //         char* sym_name = reinterpret_cast<char*>(dyn_str + sym->st_name);
+    //         switch (ELF64_ST_TYPE(sym->st_info)) {
+    //         case STT_FUNC:
+    //         case STT_OBJECT:
+    //         case STT_NOTYPE:
+    //             needed_symbols.push_back(i);
+    //             break;
+    //         default:
+    //             std::cerr << "Unknown symbol type\n";
+    //             break;
+    //         }
+    //     }
+    // }
+
+    void Runner::link_external_libs(void) {
+        for (auto lib : dyn_needed_libs) {
+            std::string lib_name = dyn_str + lib; // base_addr + str section + offset into str section
+            std::ifstream lib_file("/lib/x86_64-linux-gnu/" + lib_name, std::ios::binary);
+            // ADD SUPPORT FOR MORE LIBRARY PATHS
+            if (!lib_file.is_open()) {
+                std::cerr << "Failed to open library: " << lib_name << "\n";
+                exit(1);
+            }
+
+            Loader* lib_parser = new Loader(("/lib/x86_64-linux-gnu/" + lib_name).c_str(), libs_base_addr);
+            lib_parser->parse_elf_header();
+            lib_parser->parse_prog_headers();
+            lib_parser->map_dyn_segment();
+            lib_parser->parse_dyn_segment();
+            lib_parser->map_load_segments();
+
+            resolve_symbols_from_external_lib(lib_parser->dyn_sym, lib_parser->dyn_str, lib_parser->load_base_addr);
+
+            lib_parser->set_correct_permissions();
+        }
     }
 
     void Runner::apply_dyn_relocations(void) {
@@ -24,15 +103,17 @@ constexpr Elf64_Addr executable_base_addr = 0x400000;
 
         for (Elf64_Word i = 0; i < (dyn_rela.total_size / dyn_rela.entry_size); i++) {
             Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_offset + load_base_addr);
+            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn_sym + ELF64_R_SYM(dyn_rela.addr[i].r_info));
             switch (ELF64_R_TYPE(dyn_rela.addr[i].r_info)) {
                 case R_X86_64_RELATIVE:
                     *addr = dyn_rela.addr[i].r_addend + load_base_addr;
                     break;
                 case R_X86_64_64:
-                    *addr = dyn_rela.addr[i].r_addend + load_base_addr;
+                    *addr = dyn_rela.addr[i].r_addend + load_base_addr + sym->st_value;
                     break;
                 case R_X86_64_COPY:
-                    *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
+                    needed_symbols.push_back(i);
+                    // *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
                     break;
                 default:
                     std::cerr << "Unknown relocation type\n";
@@ -41,7 +122,7 @@ constexpr Elf64_Addr executable_base_addr = 0x400000;
         }
     }
 
-    void Runner::run(void){ // elf_header.e_entry 0x401655
+    void Runner::run(void) { // elf_header.e_entry 0x401655
         map_dyn_segment();
         parse_dyn_segment();
         map_load_segments();

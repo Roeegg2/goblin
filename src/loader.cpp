@@ -8,7 +8,6 @@
 #include <cstring>
 
 namespace Roee_ELF {
-constexpr Elf64_Addr libs_base_addr = 0x600000;
     Loader::Loader(const char* file_path, const Elf64_Addr load_base_addr) : Parser_64b(file_path) {
         mmap_elf_file_fd = open(file_path, O_RDONLY);
         if (mmap_elf_file_fd == -1) {
@@ -70,8 +69,12 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
         if (dyn_seg_index < 0) {
             return;
         }
-        segment_data[dyn_seg_index] = mmap(NULL, prog_headers[dyn_seg_index].p_memsz, PROT_READ | PROT_WRITE,
-            MAP_PRIVATE, mmap_elf_file_fd, PAGE_ALIGN_DOWN(prog_headers[dyn_seg_index].p_offset));
+
+        {
+            const uint16_t page_count = get_page_count(prog_headers[dyn_seg_index].p_memsz, prog_headers[dyn_seg_index].p_vaddr);
+            segment_data[dyn_seg_index] = mmap(NULL, page_count, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE, mmap_elf_file_fd, PAGE_ALIGN_DOWN(prog_headers[dyn_seg_index].p_offset));
+        }
 
         // add back to segment_data the offset that was removed by the page alignment (stupid mmap...)
         segment_data[dyn_seg_index] = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(segment_data[dyn_seg_index]) +
@@ -79,8 +82,7 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
     }
 
     uint8_t Loader::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
-        addr = addr % PAGE_SIZE;
-        return ((memsz + addr) / PAGE_SIZE) + 1;
+        return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
     int Loader::elf_perm_to_mmap_perms(uint32_t const elf_flags) {
@@ -98,16 +100,15 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 {
                     // get page count to alloacte
-                    uint8_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
+                    const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
                     // allocate memory for the segment
                     segment_data[i] = mmap(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(prog_headers[i].p_vaddr) + load_base_addr),
-                        page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE,
-                        mmap_elf_file_fd, PAGE_ALIGN_DOWN(prog_headers[i].p_offset));
+                        page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
+                        MAP_PRIVATE | MAP_FIXED, mmap_elf_file_fd, PAGE_ALIGN_DOWN(prog_headers[i].p_offset));
                 }
 
                 // if some error occured
                 if (reinterpret_cast<Elf64_Addr>(segment_data[i]) > 0xffffffffffffff00) {
-                    std::cerr << "i is: " << i << "\n";
                     std::cerr << "mmap failed BIG TIME\n";
                     exit(1);
                 }
@@ -118,6 +119,7 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
                 // as specified in the ELF64 spec, all memory that isnt mapped from the file should be zeroed
                 memset(reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(segment_data[i]) + prog_headers[i].p_filesz),
                     0x0, prog_headers[i].p_memsz - prog_headers[i].p_filesz);
+
             }
         }
     }
@@ -125,8 +127,9 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
     void Loader::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
+                const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
                 if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
-                    prog_headers[i].p_memsz, elf_perm_to_mmap_perms(prog_headers[i].p_flags)) == -1) {
+                    page_count * PAGE_SIZE, elf_perm_to_mmap_perms(prog_headers[i].p_flags)) == -1) {
                     std::cerr << "mprotect failed\n";
                     exit(1);
                 }

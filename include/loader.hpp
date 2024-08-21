@@ -8,6 +8,7 @@
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
 
 namespace Roee_ELF {
+    constexpr Elf64_Addr libs_base_addr = 0x600000;
     constexpr uint16_t PAGE_SIZE = 0x1000;
 
     class Loader : public Parser_64b {
@@ -18,16 +19,16 @@ namespace Roee_ELF {
         void print_dynamic_segment(void) const;
         void print_dynamic_tag(Elf64_Sxword tag) const;
 #endif
-    protected:
         void parse_dyn_segment(void);
         void map_dyn_segment(void);
         void map_load_segments(void);
         void set_correct_permissions(void);
 
+    protected:
         static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
         static int elf_perm_to_mmap_perms(uint32_t const elf_flags);
 
-    protected:
+    public:
         Elf64_Addr load_base_addr;
 
         void** segment_data;

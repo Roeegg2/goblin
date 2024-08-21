@@ -3,7 +3,7 @@
 using namespace Roee_ELF;
 
 int main() {
-    Runner* loader = new Runner("tests/hello");
+    Runner* loader = new Runner("tests/hello-dl");
 
 #ifdef DEBUG
     loader->full_print();
