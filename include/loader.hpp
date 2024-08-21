@@ -2,10 +2,14 @@
 #define RUNNER_HPP
 
 #include "parser.hpp"
-#include <elf.h>
+
 #include <list>
 
+#define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
+
 namespace Roee_ELF {
+    constexpr uint16_t PAGE_SIZE = 0x1000;
+
     class Loader : public Parser_64b {
     public:
         Loader(const char* file_path, const Elf64_Addr load_base_addr);
@@ -15,19 +19,17 @@ namespace Roee_ELF {
         void print_dynamic_tag(Elf64_Sxword tag) const;
 #endif
     protected:
-        void apply_dyn_relocations(void);
         void parse_dyn_segment(void);
         void map_dyn_segment(void);
         void map_load_segments(void);
         void set_correct_permissions(void);
-        // void link_external_libs(void);
 
-        uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
+        static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
+        static int elf_perm_to_mmap_perms(uint32_t const elf_flags);
 
     protected:
         Elf64_Addr load_base_addr;
 
-    private:
         void** segment_data;
         int mmap_elf_file_fd; // file descriptor for mma
 

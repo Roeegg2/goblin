@@ -1,12 +1,10 @@
 #ifdef DEBUG
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <string>
-#include <cstdint>
 #include "../include/parser.hpp"
 #include "../include/loader.hpp"
-#include "../include/utils.hpp"
+
+#include <iostream>
+#include <vector>
+#include <string>
 
 namespace Roee_ELF {
     void Parser_64b::full_print() const {

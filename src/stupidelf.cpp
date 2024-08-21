@@ -1,7 +1,5 @@
 #include "../include/runner.hpp"
 
-#include <sys/mman.h>
-
 using namespace Roee_ELF;
 
 int main() {

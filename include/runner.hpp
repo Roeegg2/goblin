@@ -9,6 +9,10 @@ namespace Roee_ELF {
         Runner(const char* file_path);
         ~Runner(void);
         void run(void);
+
+    private:
+        void apply_dyn_relocations(void);
+        void link_external_libs(void);
     };
 }
 

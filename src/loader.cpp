@@ -1,14 +1,11 @@
 #include "../include/loader.hpp"
-#include "../include/utils.hpp"
 
-#include <cstdint>
-#include <cstdlib>
 #include <elf.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <sys/fcntl.h>
 #include <unistd.h>
 #include <iostream>
+#include <cstring>
 
 namespace Roee_ELF {
 constexpr Elf64_Addr libs_base_addr = 0x600000;
@@ -69,30 +66,6 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
         }
     }
 
-    void Loader::apply_dyn_relocations(void) {
-        if (dyn_seg_index < 0){
-            return;
-        }
-
-        for (Elf64_Word i = 0; i < (dyn_rela.total_size / dyn_rela.entry_size); i++) {
-            Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_offset + load_base_addr);
-            switch (ELF64_R_TYPE(dyn_rela.addr[i].r_info)) {
-                case R_X86_64_RELATIVE:
-                    *addr = dyn_rela.addr[i].r_addend + load_base_addr;
-                    break;
-                case R_X86_64_64:
-                    *addr = dyn_rela.addr[i].r_addend + load_base_addr;
-                    break;
-                case R_X86_64_COPY:
-                    *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
-                    break;
-                default:
-                    std::cerr << "Unknown relocation type\n";
-                    exit(1);
-            }
-        }
-    }
-
     void Loader::map_dyn_segment(void) {
         if (dyn_seg_index < 0) {
             return;
@@ -108,6 +81,16 @@ constexpr Elf64_Addr libs_base_addr = 0x600000;
     uint8_t Loader::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
         addr = addr % PAGE_SIZE;
         return ((memsz + addr) / PAGE_SIZE) + 1;
+    }
+
+    int Loader::elf_perm_to_mmap_perms(uint32_t const elf_flags) {
+        int mmap_flags = 0;
+
+        if (elf_flags & 0x1) mmap_flags |= PROT_EXEC;
+        if (elf_flags & 0x2) mmap_flags |= PROT_WRITE;
+        if (elf_flags & 0x4) mmap_flags |= PROT_READ;
+
+        return mmap_flags;
     }
 
     void Loader::map_load_segments(void) {

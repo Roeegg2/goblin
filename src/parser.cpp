@@ -1,12 +1,8 @@
 #include "../include/parser.hpp"
-#include "../include/utils.hpp"
 
-#include <cstdint>
 #include <elf.h>
-#include <fstream>
 #include <iostream>
-#include <sys/mman.h>
-#include <sys/fcntl.h>
+#include <cstring>
 
 #define MAP_SEGMENT_DATA(sect_data, sect_index) \
     mmap_wrapper(reinterpret_cast<void**>(&sect_data), 0x0, sect_headers[sect_index].sh_size, PROT_READ, \
