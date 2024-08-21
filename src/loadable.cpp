@@ -2,13 +2,16 @@
 
 #include <elf.h>
 #include <fcntl.h>
+#include <memory>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <iostream>
 #include <cstring>
+#include <vector>
 
 namespace Roee_ELF {
-    Loadable::Loadable(const char* file_path, const Elf64_Addr load_base_addr) : ELF_File(file_path) {
+    Loadable::Loadable(const char* file_path, const Elf64_Addr load_base_addr)
+        : ELF_File(file_path), dyn_rela({0, 0, 0}), dyn_sym(nullptr), dyn_str(nullptr) {
         mmap_elf_file_fd = open(file_path, O_RDONLY);
         if (mmap_elf_file_fd == -1) {
             std::cerr << "Failed to open file\n";
@@ -40,6 +43,7 @@ namespace Roee_ELF {
         }
 
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
+        std::vector<Elf64_Xword> dt_needed_list;
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
             case DT_RELA:
@@ -58,10 +62,18 @@ namespace Roee_ELF {
                 dyn_rela.entry_size = dyn_table->d_un.d_val;
                 break;
             case DT_NEEDED:
-                shared_objs_dependency_tree.push_back(dyn_table->d_un.d_val);
+                // NOTE: CHANGE THE SIZE HERE (0x10000) to the actual size of the last .so
+                // NOTE: BEFORE CREATING NEW LOADABLE, CHECK IF IT ALREADY EXISTS
+                dt_needed_list.push_back(dyn_table->d_un.d_val);
                 break;
             }
             dyn_table++;
+        }
+
+        for (auto dt_needed : dt_needed_list) {
+            std::string str = "/home/roeet/Projects/stupidelf/tests/" + std::string(dyn_str + dt_needed);
+            std::shared_ptr<Loadable> dep(new Loadable(str.c_str(), load_base_addr + 0x10000));
+            dependencies.push_back(dep);
         }
     }
 
@@ -137,22 +149,67 @@ namespace Roee_ELF {
         }
     }
 
-    // void Loadable::build_shared_objs_dep_graph(void) {
-    //     parse_elf_header();
-    //     parse_prog_headers();
-    //     map_dyn_segment();
-    //     parse_dyn_segment();
-    //     map_load_segments();
+    void Loadable::build_shared_objs_tree(void) {
+        map_load_segments();
+        map_dyn_segment();
+        parse_dyn_segment();
+        apply_basic_dyn_relocations();
 
-    //     for (auto& shared_obj : shared_obj) {
-    //         // std::string lib_name = std::string(dyn_str + lib);
-    //         // if (loaded_libs.find(lib_name) == loaded_libs.end()) {
-    //         //     loaded_libs[lib_name] = std::make_shared<Loadable>(lib_name);
-    //         //     loaded_libs[lib_name]->build_shared_objs_dep_graph();
-    //         // }
-    //     }
-    //     set_correct_permissions();
-    // }
+        for (auto& dep : dependencies) {
+            dep->build_shared_objs_tree();
+            apply_dep_dyn_relocations(dep);
+        }
+
+        set_correct_permissions();
+    }
+
+    void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
+        dep->dyn_sym++;
+        // while (*lib_dyn_sym != nullptr) {
+            if (dep->dyn_sym->st_name == 0) {
+                // continue;
+            }
+            std::string lib_sym_name = dep->dyn_str + dep->dyn_sym->st_name;
+            for (auto sym : needed_symbols) {
+                std::string org_sym_name = dyn_str + dyn_sym[sym].st_name;
+                if (lib_sym_name == org_sym_name) {
+                    char* src = reinterpret_cast<char*>(dyn_sym[sym].st_value + load_base_addr);
+                    const char* dst = reinterpret_cast<const char*>(dep->dyn_sym->st_value + dep->load_base_addr);
+                    strcpy(src, dst);
+
+                    // needed_symbols.erase(std::remove(needed_symbols.begin(),
+                    //     needed_symbols.end(), sym), needed_symbols.end());
+                }
+            }
+            dep->dyn_sym++;
+        // }
+    }
+
+    void Loadable::apply_basic_dyn_relocations(void) {
+        if (dyn_rela.addr == nullptr){
+            return;
+        }
+
+        for (Elf64_Word i = 0; i < (dyn_rela.total_size / dyn_rela.entry_size); i++) {
+            Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_offset + load_base_addr);
+            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn_sym + ELF64_R_SYM(dyn_rela.addr[i].r_info));
+            switch (ELF64_R_TYPE(dyn_rela.addr[i].r_info)) {
+                case R_X86_64_RELATIVE:
+                    *addr = dyn_rela.addr[i].r_addend + load_base_addr;
+                    break;
+                case R_X86_64_64:
+                    *addr = dyn_rela.addr[i].r_addend + load_base_addr + sym->st_value;
+                    break;
+                case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
+                    needed_symbols.push_back(i);
+                    // *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
+                    break;
+                default:
+                    std::cerr << "Unknown relocation type\n";
+                    exit(1);
+            }
+        }
+    }
 }
 
 /*

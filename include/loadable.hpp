@@ -5,7 +5,7 @@
 
 #include <elf.h>
 #include <list>
-// #include <memory>
+#include <memory>
 
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
 
@@ -25,12 +25,14 @@ namespace Roee_ELF {
         void map_dyn_segment(void);
         void map_load_segments(void);
         void set_correct_permissions(void);
+        void apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep);
+        void apply_basic_dyn_relocations(void);
 
     protected:
         static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
         static int elf_perm_to_mmap_perms(uint32_t const elf_flags);
 
-        void build_shared_objs_dep_graph(void);
+        void build_shared_objs_tree(void);
 
     public:
         Elf64_Addr load_base_addr;
@@ -46,13 +48,8 @@ namespace Roee_ELF {
         Elf64_Sym* dyn_sym;
         char* dyn_str;
 
-        std::list<Elf64_Word> needed_symbols; // indices of symbols that are needed from external libraries
-        std::list<Elf64_Xword> shared_objs_dependency_tree;
-    };
-
-    struct shared_obj {
-        Loadable* loadable;
-        // std::list<std::shared_ptr<shared_obj>> dependencies; // list of shared objects that this shared object depends on
+        std::list<Elf64_Word> needed_symbols; // indices of symbols that are needed from the external libraries
+        std::list<std::shared_ptr<Loadable>> dependencies; // list of Loader objects that contain the needed symbols
     };
 }
 

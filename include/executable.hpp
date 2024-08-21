@@ -4,6 +4,7 @@
 #include "loadable.hpp"
 
 #include <elf.h>
+// #include <set>
 
 namespace Roee_ELF {
     class Executable final : public Loadable{
@@ -13,12 +14,7 @@ namespace Roee_ELF {
         void run(void);
 
     private:
-        void apply_dyn_relocations(void);
-        void map_symbols_from_external_lib(Elf64_Sym* dyn_sym);
-        void link_external_libs(void);
-
-        void resolve_symbols_from_external_lib(Elf64_Sym* lib_dyn_sym, const char* lib_dyn_str, const Elf64_Addr lib_base_addr);
-
+        // std::set<shared_obj> needed_shared_objs;
     };
 }
 
