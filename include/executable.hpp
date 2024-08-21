@@ -1,14 +1,15 @@
 #ifndef LOADER_HPP
 #define LOADER_HPP
 
-#include "loader.hpp"
+#include "loadable.hpp"
+
 #include <elf.h>
 
 namespace Roee_ELF {
-    class Runner final : public Loader{
+    class Executable final : public Loadable{
     public:
-        Runner(const char* file_path);
-        ~Runner(void);
+        Executable(const char* file_path);
+        ~Executable(void);
         void run(void);
 
     private:
@@ -18,8 +19,6 @@ namespace Roee_ELF {
 
         void resolve_symbols_from_external_lib(Elf64_Sym* lib_dyn_sym, const char* lib_dyn_str, const Elf64_Addr lib_base_addr);
 
-    private:
-        std::list<Elf64_Word> needed_symbols; // indices of symbols that are needed from external libraries
     };
 }
 

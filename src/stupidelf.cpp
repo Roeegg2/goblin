@@ -1,14 +1,14 @@
-#include "../include/runner.hpp"
+#include "../include/executable.hpp"
 
 using namespace Roee_ELF;
 
 int main() {
-    Runner* loader = new Runner("tests/hello-dl");
+    Executable* executable = new Executable("tests/hello-dl");
 
 #ifdef DEBUG
-    loader->full_print();
+    executable->full_print();
 #endif
-    loader->run();
+    executable->run();
 
     exit(0);
 }

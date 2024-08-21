@@ -1,4 +1,4 @@
-#include "../include/loader.hpp"
+#include "../include/loadable.hpp"
 
 #include <elf.h>
 #include <fcntl.h>
@@ -8,7 +8,7 @@
 #include <cstring>
 
 namespace Roee_ELF {
-    Loader::Loader(const char* file_path, const Elf64_Addr load_base_addr) : Parser_64b(file_path) {
+    Loadable::Loadable(const char* file_path, const Elf64_Addr load_base_addr) : ELF_File(file_path) {
         mmap_elf_file_fd = open(file_path, O_RDONLY);
         if (mmap_elf_file_fd == -1) {
             std::cerr << "Failed to open file\n";
@@ -24,7 +24,7 @@ namespace Roee_ELF {
             this->load_base_addr = 0x0;
     }
 
-    Loader::~Loader(void){
+    Loadable::~Loadable(void){
         for (int i = 0; i < elf_header.e_phnum; i++) {
             if (segment_data[i] != nullptr) {
                 munmap(segment_data[i], prog_headers[i].p_memsz);
@@ -34,7 +34,7 @@ namespace Roee_ELF {
         close(mmap_elf_file_fd);
     }
 
-    void Loader::parse_dyn_segment(void) {
+    void Loadable::parse_dyn_segment(void) {
         if (dyn_seg_index < 0){
             return;
         }
@@ -58,14 +58,14 @@ namespace Roee_ELF {
                 dyn_rela.entry_size = dyn_table->d_un.d_val;
                 break;
             case DT_NEEDED:
-                dyn_needed_libs.push_back(dyn_table->d_un.d_val);
+                shared_objs_dependency_tree.push_back(dyn_table->d_un.d_val);
                 break;
             }
             dyn_table++;
         }
     }
 
-    void Loader::map_dyn_segment(void) {
+    void Loadable::map_dyn_segment(void) {
         if (dyn_seg_index < 0) {
             return;
         }
@@ -81,11 +81,11 @@ namespace Roee_ELF {
             prog_headers[dyn_seg_index].p_offset - PAGE_ALIGN_DOWN(prog_headers[dyn_seg_index].p_offset));
     }
 
-    uint8_t Loader::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
+    uint8_t Loadable::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
         return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
-    int Loader::elf_perm_to_mmap_perms(uint32_t const elf_flags) {
+    int Loadable::elf_perm_to_mmap_perms(uint32_t const elf_flags) {
         int mmap_flags = 0;
 
         if (elf_flags & 0x1) mmap_flags |= PROT_EXEC;
@@ -95,7 +95,7 @@ namespace Roee_ELF {
         return mmap_flags;
     }
 
-    void Loader::map_load_segments(void) {
+    void Loadable::map_load_segments(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 {
@@ -124,7 +124,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Loader::set_correct_permissions(void) {
+    void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
@@ -137,60 +137,34 @@ namespace Roee_ELF {
         }
     }
 
-    // void Loader::link_external_libs(void) {
-    //     for (auto lib : dyn_needed_libs) {
-    //         std::string lib_name = dyn_str + lib; // base_addr + str section + offset into str section
-    //         std::ifstream lib_file("/lib/x86_64-linux-gnu/" + lib_name, std::ios::binary);
-    //         // ADD SUPPORT FOR MORE LIBRARY PATHS
-    //         if (!lib_file.is_open()) {
-    //             std::cerr << "Failed to open library: " << lib_name << "\n";
-    //             exit(1);
-    //         }
+    // void Loadable::build_shared_objs_dep_graph(void) {
+    //     parse_elf_header();
+    //     parse_prog_headers();
+    //     map_dyn_segment();
+    //     parse_dyn_segment();
+    //     map_load_segments();
 
-    //         Loader* lib_parser = new Loader(("/lib/x86_64-linux-gnu/" + lib_name).c_str(), libs_load_base_addr);
-    //         lib_parser->parse_elf_header();
-    //         lib_parser->parse_prog_headers();
-    //         lib_parser->map_dyn_segment();
-    //         lib_parser->parse_dyn_segment();
+    //     for (auto& shared_obj : shared_obj) {
+    //         // std::string lib_name = std::string(dyn_str + lib);
+    //         // if (loaded_libs.find(lib_name) == loaded_libs.end()) {
+    //         //     loaded_libs[lib_name] = std::make_shared<Loadable>(lib_name);
+    //         //     loaded_libs[lib_name]->build_shared_objs_dep_graph();
+    //         // }
     //     }
-
-
-
-        // for (auto lib : dyn_needed_libs) {
-        //     std::string lib_name = dyn_str[lib];
-        //     std::string lib_path = "/lib/x86_64-linux-gnu/" + lib_name + ".so";
-        //     int lib_fd = open(lib_path.c_str(), O_RDONLY);
-        //     if (lib_fd == -1) {
-        //         std::cerr << "Failed to open library: " << lib_name << "\n";
-        //         exit(1);
-        //     }
-
-        //     struct stat lib_stat;
-        //     if (fstat(lib_fd, &lib_stat) == -1) {
-        //         std::cerr << "Failed to get library stats\n";
-        //         exit(1);
-        //     }
-
-        //     void* lib_base_addr = mmap(NULL, lib_stat.st_size, PROT_READ, MAP_PRIVATE, lib_fd, 0);
-        //     if (lib_base_addr == MAP_FAILED) {
-        //         std::cerr << "Failed to map library\n";
-        //         exit(1);
-        //     }
-
-        //     Elf64_Ehdr* lib_elf_header = reinterpret_cast<Elf64_Ehdr*>(lib_base_addr);
-        //     Elf64_Phdr* lib_prog_headers = reinterpret_cast<Elf64_Phdr*>(reinterpret_cast<Elf64_Addr>(lib_base_addr) + lib_elf_header->e_phoff);
-
-        //     for (int8_t i = 0; i < lib_elf_header->e_phnum; i++) {
-        //         if (lib_prog_headers[i].p_type == PT_LOAD && lib_prog_headers[i].p_memsz > 0) {
-        //             void* lib_segment = mmap(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(lib_prog_headers[i].p_vaddr)),
-        //                 get_page_count(lib_prog_headers[i].p_memsz, lib_prog_headers[i].p_vaddr) * PAGE_SIZE,
-        //                 PROT_READ, MAP_PRIVATE | MAP_FIXED, lib_fd, PAGE_ALIGN_DOWN(lib_prog_headers[i].p_offset));
-        //             if (lib_segment == MAP_FAILED) {
-        //                 std::cerr << "Failed to map library segment\n";
-        //                 exit(1);
-        //             }
-        //         }
-        //     }
-        // }
+    //     set_correct_permissions();
     // }
 }
+
+/*
+plan:
+1. build dep tree - read each file (starting from current executable)
+   parse dyn section and get needed libraries
+   if needed lib is already referenced, add shared_ptr it.
+   load lib to mem
+   for every lib, call the same function (parse dyn section and get needed libraries)
+
+   after the recursion ends, we have a tree of dependencies
+   for each node, resolve relocations
+
+
+*/

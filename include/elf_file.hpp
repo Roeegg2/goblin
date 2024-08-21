@@ -7,10 +7,10 @@
 namespace Roee_ELF {
     constexpr Elf64_Addr executable_base_addr = 0x400000;
 
-    class Parser_64b {
+    class ELF_File {
     public:
-        Parser_64b(const char* file_name);
-        ~Parser_64b(void);
+        ELF_File(const char* file_name);
+        ~ELF_File(void);
         void full_parse(void);
         void parse_elf_header(void);
         void parse_prog_headers(void);

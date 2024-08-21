@@ -1,20 +1,20 @@
 #ifdef DEBUG
-#include "../include/parser.hpp"
-#include "../include/loader.hpp"
+#include "../include/elf_file.hpp"
+#include "../include/loadable.hpp"
 
 #include <iostream>
 #include <vector>
 #include <string>
 
 namespace Roee_ELF {
-    void Parser_64b::full_print() const {
+    void ELF_File::full_print() const {
         print_file_info();
         print_prog_headers();
         print_sect_headers();
         // print_symtab();
     }
 
-    void Parser_64b::print_file_info() const {
+    void ELF_File::print_file_info() const {
         std::cout << "ISA: ";
         print_isa();
         std::cout << "\nFile type: ";
@@ -22,19 +22,19 @@ namespace Roee_ELF {
         std::cout << "\nEntry point: 0x" << std::hex << elf_header.e_entry;
     }
 
-    void Parser_64b::print_isa() const {
+    void ELF_File::print_isa() const {
         static const std::vector<std::string> isa_names = {
             "No specific ISA", "SPARC", "x86", "MIPS", "PowerPC", "S390", "ARM", "SuperH", "IA-64", "x86-64", "AArch64", "RISC-V", "Other"
         };
         std::cout << isa_names[elf_header.e_machine];
     }
 
-    void Parser_64b::print_file_type() const {
+    void ELF_File::print_file_type() const {
         static const std::vector<std::string> file_types = { "NONE", "REL", "EXEC", "DYN", "CORE", "OTHER" };
         std::cout << file_types[elf_header.e_type];
     }
 
-    void Parser_64b::print_ph_type(uint16_t i) const {
+    void ELF_File::print_ph_type(uint16_t i) const {
         static const std::vector<std::string> ph_types = {
             "NULL", "LOAD", "DYNAMIC", "INTERP", "NOTE", "SHLIB", "PHDR", "TLS", "LOOS", "HIOS", "LOPROC", "HIPROC",
             "GNUEH_FRAME", "GNU_STACK", "GNU_RELRO", "GNU_PROPERTY", "Unknown", "GNU SHIT"
@@ -42,7 +42,7 @@ namespace Roee_ELF {
         std::cout << (prog_headers[i].p_type > 17 ? ph_types[17] : ph_types[prog_headers[i].p_type]);
     }
 
-    void Parser_64b::print_prog_headers() const {
+    void ELF_File::print_prog_headers() const {
         std::cout << "\n==== Program headers: ====\n";
         for (uint8_t i = 0; i < elf_header.e_phnum; i++) {
             std::cout << "Type: ";
@@ -57,7 +57,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Parser_64b::print_sh_type(uint16_t i) const {
+    void ELF_File::print_sh_type(uint16_t i) const {
         static const std::vector<std::string> sh_types = {
             "NULL", "PROGBITS", "SYMTAB", "STRTAB", "RELA", "HASH", "DYNAMIC", "NOTE", "NOBITS", "REL", "SHLIB", "DYNSYM",
             "INIT_ARRAY", "FINI_ARRAY", "PREINIT_ARRAY", "GROUP", "SYMTAB_SHNDX", "OS specific", "OS specific",
@@ -66,7 +66,7 @@ namespace Roee_ELF {
         std::cout << (sect_headers[i].sh_type > 30 ? sh_types[30] : sh_types[sect_headers[i].sh_type]);
     }
 
-    void Parser_64b::print_sect_headers() const {
+    void ELF_File::print_sect_headers() const {
         std::cout << "\n==== Section headers: ====\n";
         for (uint8_t i = 0; i < elf_header.e_shnum; i++) {
             std::cout << "Name: "; // print_str(STDOUT_FD, sect_headers[i].name);
@@ -83,7 +83,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Loader::print_dynamic_segment() const {
+    void Loadable::print_dynamic_segment() const {
         if (dyn_seg_index == -1) {
 #ifdef DEBUG
             std::cout << "\nNo dynamic segment found\n";
@@ -100,7 +100,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Loader::print_dynamic_tag(Elf64_Sxword tag) const {
+    void Loadable::print_dynamic_tag(Elf64_Sxword tag) const {
         if (dyn_seg_index == -1) {
 #ifdef DEBUG
             std::cout << "No dynamic segment found\n";

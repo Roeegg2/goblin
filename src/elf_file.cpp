@@ -1,4 +1,4 @@
-#include "../include/parser.hpp"
+#include "../include/elf_file.hpp"
 
 #include <elf.h>
 #include <iostream>
@@ -9,7 +9,7 @@
         MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
 namespace Roee_ELF {
-    Parser_64b::Parser_64b(const char* file_path) {
+    ELF_File::ELF_File(const char* file_path) {
         elf_file.open(file_path, std::ios::binary);
         if (!elf_file.is_open()) {
             std::cerr << "Failed to open ELF file\n";
@@ -19,19 +19,19 @@ namespace Roee_ELF {
         dyn_seg_index = -1;
     }
 
-    Parser_64b::~Parser_64b(void) {
+    ELF_File::~ELF_File(void) {
         elf_file.close();
         delete[] prog_headers;
         delete[] sect_headers;
     }
 
-    void Parser_64b::full_parse(void) {
+    void ELF_File::full_parse(void) {
         parse_elf_header();
         parse_prog_headers();
         parse_sect_headers();
     }
 
-    inline void Parser_64b::check_elf_header_magic(void) { // sizeof(ELFMAG)
+    inline void ELF_File::check_elf_header_magic(void) { // sizeof(ELFMAG)
         read_elf_header_data(&elf_header.e_ident, SELFMAG, 0x0);
         if (memcmp(elf_header.e_ident, &ELFMAG, SELFMAG) != 0) {
             std::cerr << "Not an ELF file\n";
@@ -39,15 +39,15 @@ namespace Roee_ELF {
         }
     }
 
-    inline void Parser_64b::check_elf_header_class(void) {
+    inline void ELF_File::check_elf_header_class(void) {
         read_elf_header_data(&elf_header.e_ident[EI_CLASS], 1);
         if (elf_header.e_ident[EI_CLASS] != ELFCLASS64) {
-            std::cerr << "ELF file isn't 64 bit. This loader only supports 64 bit.\n";
+            std::cerr << "ELF file isn't 64 bit. This loadable only supports 64 bit.\n";
             exit(1);
         }
     }
 
-    void Parser_64b::read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset) {
+    void ELF_File::read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset) {
         if (offset >= 0) {
             elf_file.seekg(offset, std::ios::beg);
         }
@@ -55,7 +55,7 @@ namespace Roee_ELF {
     }
 
     /* Get the ELF file entry point from the ELF header */
-    void Parser_64b::parse_elf_header(void) {
+    void ELF_File::parse_elf_header(void) {
         check_elf_header_magic();
         check_elf_header_class();
 
@@ -73,7 +73,7 @@ namespace Roee_ELF {
     }
 
     /* Get the program header data */
-    void Parser_64b::parse_prog_headers(void) {
+    void ELF_File::parse_prog_headers(void) {
         prog_headers = new Elf64_Phdr[elf_header.e_phnum];
 
         for (uint16_t i = 0; i < elf_header.e_phnum; i++) {
@@ -93,7 +93,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Parser_64b::parse_sect_headers(void) {
+    void ELF_File::parse_sect_headers(void) {
         sect_headers = new Elf64_Shdr[elf_header.e_shnum];
 
         for (uint16_t i = 0; i < elf_header.e_shnum; i++) {

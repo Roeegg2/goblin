@@ -1,20 +1,19 @@
-#include "../include/runner.hpp"
+#include "../include/executable.hpp"
 
-#include <algorithm>
 #include <cstring>
 #include <elf.h>
 #include <iostream>
 
 namespace Roee_ELF {
-    Runner::Runner(const char* file_path) : Loader(file_path, executable_base_addr){
+    Executable::Executable(const char* file_path) : Loadable(file_path, executable_base_addr){
 
     }
 
-    Runner::~Runner(void){
+    Executable::~Executable(void){
 
     }
 
-    void Runner::resolve_symbols_from_external_lib(Elf64_Sym* lib_dyn_sym, const char* lib_dyn_str, const Elf64_Addr lib_base_addr) {
+    void Executable::resolve_symbols_from_external_lib(Elf64_Sym* lib_dyn_sym, const char* lib_dyn_str, const Elf64_Addr lib_base_addr) {
         // for (Elf64_Xword i = 0; i < (lib_dyn_sym->st_size / lib_dyn_sym->st_info); i++) {
         //     if (lib_dyn_sym[i].st_name == 0) {
         //         continue;
@@ -53,7 +52,7 @@ namespace Roee_ELF {
         // }
     }
 
-    // void Runner::parse_dyn_sym_section() {
+    // void Executable::parse_dyn_sym_section() {
     //     for (Elf64_Xword i = 0; i < (dyn_sym->st_size / dyn_sym->st_info); i++) {
     //         Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn_sym->st_value + i * dyn_sym->st_info);
     //         if (sym->st_name == 0) {
@@ -73,8 +72,8 @@ namespace Roee_ELF {
     //     }
     // }
 
-    void Runner::link_external_libs(void) {
-        for (auto lib : dyn_needed_libs) {
+    void Executable::link_external_libs(void) {
+        for (auto lib : shared_objs_dependency_tree) {
             std::string lib_name = dyn_str + lib; // base_addr + str section + offset into str section
             std::ifstream lib_file("/lib/x86_64-linux-gnu/" + lib_name, std::ios::binary);
             // ADD SUPPORT FOR MORE LIBRARY PATHS
@@ -83,20 +82,20 @@ namespace Roee_ELF {
                 exit(1);
             }
 
-            Loader* lib_parser = new Loader(("/lib/x86_64-linux-gnu/" + lib_name).c_str(), libs_base_addr);
-            lib_parser->parse_elf_header();
-            lib_parser->parse_prog_headers();
-            lib_parser->map_dyn_segment();
-            lib_parser->parse_dyn_segment();
-            lib_parser->map_load_segments();
+            Loadable* lib_elf_file = new Loadable(("/lib/x86_64-linux-gnu/" + lib_name).c_str(), libs_base_addr);
+            lib_elf_file->parse_elf_header();
+            lib_elf_file->parse_prog_headers();
+            lib_elf_file->map_dyn_segment();
+            lib_elf_file->parse_dyn_segment();
+            lib_elf_file->map_load_segments();
 
-            resolve_symbols_from_external_lib(lib_parser->dyn_sym, lib_parser->dyn_str, lib_parser->load_base_addr);
+            resolve_symbols_from_external_lib(lib_elf_file->dyn_sym, lib_elf_file->dyn_str, lib_elf_file->load_base_addr);
 
-            lib_parser->set_correct_permissions();
+            lib_elf_file->set_correct_permissions();
         }
     }
 
-    void Runner::apply_dyn_relocations(void) {
+    void Executable::apply_dyn_relocations(void) {
         if (dyn_seg_index < 0){
             return;
         }
@@ -122,11 +121,12 @@ namespace Roee_ELF {
         }
     }
 
-    void Runner::run(void) { // elf_header.e_entry 0x401655
+    void Executable::run(void) { // elf_header.e_entry 0x401655
         map_dyn_segment();
         parse_dyn_segment();
         map_load_segments();
         apply_dyn_relocations();
+        // build_shared_objs_dep_graph();
         link_external_libs();
         set_correct_permissions();
 
