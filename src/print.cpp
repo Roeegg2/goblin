@@ -5,7 +5,7 @@
 #include <string>
 #include <cstdint>
 #include "../include/parser.hpp"
-#include "../include/runner.hpp"
+#include "../include/loader.hpp"
 #include "../include/utils.hpp"
 
 namespace Roee_ELF {
@@ -85,9 +85,11 @@ namespace Roee_ELF {
         }
     }
 
-    void Runner::print_dynamic_segment() const {
+    void Loader::print_dynamic_segment() const {
         if (dyn_seg_index == -1) {
+#ifdef DEBUG
             std::cout << "\nNo dynamic segment found\n";
+#endif
             return;
         }
 
@@ -100,9 +102,11 @@ namespace Roee_ELF {
         }
     }
 
-    void Runner::print_dynamic_tag(Elf64_Sxword tag) const {
+    void Loader::print_dynamic_tag(Elf64_Sxword tag) const {
         if (dyn_seg_index == -1) {
+#ifdef DEBUG
             std::cout << "No dynamic segment found\n";
+#endif
             return;
         }
 

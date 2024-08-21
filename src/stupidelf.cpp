@@ -5,11 +5,12 @@
 using namespace Roee_ELF;
 
 int main() {
-    Runner* runner = new Runner("tests/hello-dl");
+    Runner* loader = new Runner("tests/hello");
+
 #ifdef DEBUG
-    runner->full_print();
+    loader->full_print();
 #endif
-    runner->run();
+    loader->run();
 
     exit(0);
 }

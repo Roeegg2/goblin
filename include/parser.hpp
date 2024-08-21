@@ -8,6 +8,7 @@ namespace Roee_ELF {
     class Parser_64b {
     public:
         Parser_64b(const char* file_name);
+        ~Parser_64b(void);
         void full_parse(void);
         void parse_elf_header(void);
         void parse_prog_headers(void);

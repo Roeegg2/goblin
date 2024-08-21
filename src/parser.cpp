@@ -23,6 +23,12 @@ namespace Roee_ELF {
         dyn_seg_index = -1;
     }
 
+    Parser_64b::~Parser_64b(void) {
+        elf_file.close();
+        delete[] prog_headers;
+        delete[] sect_headers;
+    }
+
     void Parser_64b::full_parse(void) {
         parse_elf_header();
         parse_prog_headers();
