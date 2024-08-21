@@ -15,11 +15,12 @@
 namespace Roee_ELF {
     Parser_64b::Parser_64b(const char* file_path) {
         elf_file.open(file_path, std::ios::binary);
-
         if (!elf_file.is_open()) {
             std::cerr << "Failed to open ELF file\n";
             exit(1);
         }
+
+        dyn_seg_index = -1;
     }
 
     void Parser_64b::full_parse(void) {
@@ -46,7 +47,7 @@ namespace Roee_ELF {
 
     void Parser_64b::read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset) {
         if (offset >= 0) {
-            elf_file.seekg(offset);
+            elf_file.seekg(offset, std::ios::beg);
         }
         elf_file.read(reinterpret_cast<char*>(data), bytes);
     }
@@ -84,6 +85,9 @@ namespace Roee_ELF {
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_filesz), 8); // size of segment in file
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_memsz), 8); // size of segment in memory
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_align), 8); // alignment
+
+            if (prog_headers[i].p_type == PT_DYNAMIC)
+                dyn_seg_index = i;
         }
     }
 

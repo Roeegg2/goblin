@@ -39,6 +39,8 @@ namespace Roee_ELF {
         Elf64_Ehdr elf_header;
         Elf64_Phdr* prog_headers;
         Elf64_Shdr* sect_headers;
+
+        int16_t dyn_seg_index;
     };
 }
 

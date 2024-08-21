@@ -85,7 +85,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Runner::print_dynamic_segment() {
+    void Runner::print_dynamic_segment() const {
         if (dyn_seg_index == -1) {
             std::cout << "\nNo dynamic segment found\n";
             return;
@@ -100,7 +100,7 @@ namespace Roee_ELF {
         }
     }
 
-    void Runner::print_dynamic_tag(Elf64_Sxword tag) {
+    void Runner::print_dynamic_tag(Elf64_Sxword tag) const {
         if (dyn_seg_index == -1) {
             std::cout << "No dynamic segment found\n";
             return;
