@@ -5,8 +5,6 @@
 #include <fstream>
 
 namespace Roee_ELF {
-    constexpr Elf64_Addr executable_base_addr = 0x400000;
-
     class ELF_File {
     public:
         ELF_File(const char* file_name);

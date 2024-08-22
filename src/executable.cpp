@@ -7,7 +7,7 @@
 
 namespace Roee_ELF {
     Executable::Executable(const char* file_path)
-        : Loadable(file_path, executable_base_addr) { }
+        : Loadable(file_path) { }
 
     Executable::~Executable(void) { }
 

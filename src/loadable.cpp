@@ -7,10 +7,10 @@
 #include <unistd.h>
 #include <iostream>
 #include <cstring>
-#include <vector>
+#include <algorithm>
 
 namespace Roee_ELF {
-    Loadable::Loadable(const char* file_path, const Elf64_Addr load_base_addr)
+    Loadable::Loadable(const char* file_path)
         : ELF_File(file_path), dyn_rela({0, 0, 0}), dyn_sym(nullptr), dyn_str(nullptr) {
         mmap_elf_file_fd = open(file_path, O_RDONLY);
         if (mmap_elf_file_fd == -1) {
@@ -20,11 +20,6 @@ namespace Roee_ELF {
 
         full_parse();
         segment_data = new void*[elf_header.e_phnum];
-
-        if (elf_header.e_type != ET_EXEC)
-            this->load_base_addr = load_base_addr;
-        else
-            this->load_base_addr = 0x0;
     }
 
     Loadable::~Loadable(void){
@@ -43,7 +38,7 @@ namespace Roee_ELF {
         }
 
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
-        std::vector<Elf64_Xword> dt_needed_list;
+        std::set<Elf64_Xword> dt_needed_list;
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
             case DT_RELA:
@@ -62,18 +57,17 @@ namespace Roee_ELF {
                 dyn_rela.entry_size = dyn_table->d_un.d_val;
                 break;
             case DT_NEEDED:
-                // NOTE: CHANGE THE SIZE HERE (0x10000) to the actual size of the last .so
-                // NOTE: BEFORE CREATING NEW LOADABLE, CHECK IF IT ALREADY EXISTS
-                dt_needed_list.push_back(dyn_table->d_un.d_val);
+                dt_needed_list.insert(dyn_table->d_un.d_val);
                 break;
             }
             dyn_table++;
         }
 
         for (auto dt_needed : dt_needed_list) {
-            std::string str = "/home/roeet/Projects/stupidelf/tests/" + std::string(dyn_str + dt_needed);
-            std::shared_ptr<Loadable> dep(new Loadable(str.c_str(), load_base_addr + 0x10000));
-            dependencies.push_back(dep);
+            // NOTE: BEFORE CREATING NEW LOADABLE, CHECK IF IT ALREADY EXISTS
+            std::string str = "/home/roeet/Projects/stupidelf/tests/";
+            str += dyn_str + dt_needed;
+            dependencies.insert(std::make_shared<Loadable>(str.c_str()));
         }
     }
 
@@ -107,31 +101,31 @@ namespace Roee_ELF {
         return mmap_flags;
     }
 
-    void Loadable::map_load_segments(void) {
+    uint32_t Loadable::get_total_page_count(void) {
+        uint32_t total_page_count = 0;
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
-                {
-                    // get page count to alloacte
-                    const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
-                    // allocate memory for the segment
-                    segment_data[i] = mmap(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(prog_headers[i].p_vaddr) + load_base_addr),
-                        page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
-                        MAP_PRIVATE | MAP_FIXED, mmap_elf_file_fd, PAGE_ALIGN_DOWN(prog_headers[i].p_offset));
-                }
+                total_page_count += get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
+            }
+        }
 
-                // if some error occured
-                if (reinterpret_cast<Elf64_Addr>(segment_data[i]) > 0xffffffffffffff00) {
-                    std::cerr << "mmap failed BIG TIME\n";
-                    exit(1);
-                }
+        return total_page_count;
+    }
 
-                // add back to segment_data the offset that was removed by the page alignment (stupid mmap...)
+    void Loadable::map_load_segments(void) {
+        load_base_addr = prog_headers[0].p_vaddr;
+
+        uint32_t total_page_count = get_total_page_count();
+        load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void*>(load_base_addr),
+            total_page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE,
+            mmap_elf_file_fd, 0));
+
+        if (elf_header.e_type == ET_EXEC)
+            load_base_addr = 0x0;
+
+        for (int8_t i = 0; i < elf_header.e_phnum; i++) {
+            if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr);
-
-                // as specified in the ELF64 spec, all memory that isnt mapped from the file should be zeroed
-                memset(reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(segment_data[i]) + prog_headers[i].p_filesz),
-                    0x0, prog_headers[i].p_memsz - prog_headers[i].p_filesz);
-
             }
         }
     }
@@ -140,6 +134,7 @@ namespace Roee_ELF {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
+
                 if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
                     page_count * PAGE_SIZE, elf_perm_to_mmap_perms(prog_headers[i].p_flags)) == -1) {
                     std::cerr << "mprotect failed\n";
@@ -160,29 +155,26 @@ namespace Roee_ELF {
             apply_dep_dyn_relocations(dep);
         }
 
-        set_correct_permissions();
+        // set_correct_permissions();
     }
 
     void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
-        dep->dyn_sym++;
-        // while (*lib_dyn_sym != nullptr) {
-            if (dep->dyn_sym->st_name == 0) {
-                // continue;
-            }
-            std::string lib_sym_name = dep->dyn_str + dep->dyn_sym->st_name;
+        Elf64_Sym* dep_dyn_sym = dep->dyn_sym + 1;
+        do {
+            std::string lib_sym_name = dep->dyn_str + dep_dyn_sym->st_name;
             for (auto sym : needed_symbols) {
                 std::string org_sym_name = dyn_str + dyn_sym[sym].st_name;
                 if (lib_sym_name == org_sym_name) {
                     char* src = reinterpret_cast<char*>(dyn_sym[sym].st_value + load_base_addr);
-                    const char* dst = reinterpret_cast<const char*>(dep->dyn_sym->st_value + dep->load_base_addr);
+                    const char* dst = reinterpret_cast<const char*>(dep_dyn_sym->st_value + dep->load_base_addr);
                     strcpy(src, dst);
 
                     // needed_symbols.erase(std::remove(needed_symbols.begin(),
                     //     needed_symbols.end(), sym), needed_symbols.end());
                 }
             }
-            dep->dyn_sym++;
-        // }
+            dep_dyn_sym++;
+        } while (ELF64_ST_TYPE(dep_dyn_sym->st_info) != STT_NOTYPE);
     }
 
     void Loadable::apply_basic_dyn_relocations(void) {
@@ -201,7 +193,7 @@ namespace Roee_ELF {
                     *addr = dyn_rela.addr[i].r_addend + load_base_addr + sym->st_value;
                     break;
                 case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
-                    needed_symbols.push_back(i);
+                    needed_symbols.insert(i);
                     // *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
                     break;
                 default:

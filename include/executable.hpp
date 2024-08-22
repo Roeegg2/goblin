@@ -4,7 +4,6 @@
 #include "loadable.hpp"
 
 #include <elf.h>
-// #include <set>
 
 namespace Roee_ELF {
     class Executable final : public Loadable{
@@ -14,7 +13,6 @@ namespace Roee_ELF {
         void run(void);
 
     private:
-        // std::set<shared_obj> needed_shared_objs;
     };
 }
 

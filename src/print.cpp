@@ -11,7 +11,6 @@ namespace Roee_ELF {
         print_file_info();
         print_prog_headers();
         print_sect_headers();
-        // print_symtab();
     }
 
     void ELF_File::print_file_info() const {
@@ -85,9 +84,7 @@ namespace Roee_ELF {
 
     void Loadable::print_dynamic_segment() const {
         if (dyn_seg_index == -1) {
-#ifdef DEBUG
             std::cout << "\nNo dynamic segment found\n";
-#endif
             return;
         }
 
@@ -102,9 +99,7 @@ namespace Roee_ELF {
 
     void Loadable::print_dynamic_tag(Elf64_Sxword tag) const {
         if (dyn_seg_index == -1) {
-#ifdef DEBUG
             std::cout << "No dynamic segment found\n";
-#endif
             return;
         }
 
