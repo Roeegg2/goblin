@@ -7,11 +7,11 @@
 #include <unistd.h>
 #include <iostream>
 #include <cstring>
-#include <algorithm>
+// #include <algorithm>
 
 namespace Roee_ELF {
     Loadable::Loadable(const char* file_path)
-        : ELF_File(file_path), dyn_rela({0, 0, 0}), dyn_sym(nullptr), dyn_str(nullptr) {
+        : ELF_File(file_path), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
         mmap_elf_file_fd = open(file_path, O_RDONLY);
         if (mmap_elf_file_fd == -1) {
             std::cerr << "Failed to open file\n";
@@ -42,19 +42,25 @@ namespace Roee_ELF {
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
             case DT_RELA:
-                dyn_rela.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.rela.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
+                break;
+            case DT_JMPREL:
+                plt.rela.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_SYMTAB:
-                dyn_sym = reinterpret_cast<Elf64_Sym*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.sym = reinterpret_cast<Elf64_Sym*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_STRTAB:
-                dyn_str = reinterpret_cast<char*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.str = reinterpret_cast<char*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_RELASZ:
-                dyn_rela.total_size = dyn_table->d_un.d_val;
+                dyn.rela.total_size = dyn_table->d_un.d_val;
                 break;
-            case DT_RELAENT:
-                dyn_rela.entry_size = dyn_table->d_un.d_val;
+            case DT_PLTRELSZ:
+                plt.rela.total_size = dyn_table->d_un.d_val;
+                break;
+            case DT_PLTGOT:
+                plt.got = reinterpret_cast<Elf64_Addr*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_NEEDED:
                 dt_needed_list.insert(dyn_table->d_un.d_val);
@@ -66,7 +72,7 @@ namespace Roee_ELF {
         for (auto dt_needed : dt_needed_list) {
             // NOTE: BEFORE CREATING NEW LOADABLE, CHECK IF IT ALREADY EXISTS
             std::string str = "/home/roeet/Projects/stupidelf/tests/";
-            str += dyn_str + dt_needed;
+            str += dyn.str + dt_needed;
             dependencies.insert(std::make_shared<Loadable>(str.c_str()));
         }
     }
@@ -117,8 +123,8 @@ namespace Roee_ELF {
 
         uint32_t total_page_count = get_total_page_count();
         load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void*>(load_base_addr),
-            total_page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE,
-            mmap_elf_file_fd, 0));
+            total_page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS,
+            -1, 0));
 
         if (elf_header.e_type == ET_EXEC)
             load_base_addr = 0x0;
@@ -126,6 +132,14 @@ namespace Roee_ELF {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
                 segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr);
+
+                elf_file.seekg(prog_headers[i].p_offset);
+                elf_file.read(reinterpret_cast<char*>(segment_data[i]), prog_headers[i].p_filesz);
+
+                if (prog_headers[i].p_filesz < prog_headers[i].p_memsz) {
+                    memset(reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr + prog_headers[i].p_filesz),
+                        0, prog_headers[i].p_memsz - prog_headers[i].p_filesz);
+                }
             }
         }
     }
@@ -148,7 +162,9 @@ namespace Roee_ELF {
         map_load_segments();
         map_dyn_segment();
         parse_dyn_segment();
-        apply_basic_dyn_relocations();
+        apply_basic_dyn_relocations(dyn.rela);
+        // if not doing lazy binding
+        apply_basic_dyn_relocations(plt.rela);
 
         for (auto& dep : dependencies) {
             dep->build_shared_objs_tree();
@@ -159,42 +175,45 @@ namespace Roee_ELF {
     }
 
     void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
-        Elf64_Sym* dep_dyn_sym = dep->dyn_sym + 1;
+        dep->dyn.sym += 1; // incrementing by one to skip the null
         do {
-            std::string lib_sym_name = dep->dyn_str + dep_dyn_sym->st_name;
+            std::string lib_sym_name = dep->dyn.str + dep->dyn.sym->st_name;
             for (auto sym : needed_symbols) {
-                std::string org_sym_name = dyn_str + dyn_sym[sym].st_name;
+                std::string org_sym_name = dyn.str + dyn.sym[sym].st_name;
                 if (lib_sym_name == org_sym_name) {
-                    char* src = reinterpret_cast<char*>(dyn_sym[sym].st_value + load_base_addr);
-                    const char* dst = reinterpret_cast<const char*>(dep_dyn_sym->st_value + dep->load_base_addr);
+                    char* src = reinterpret_cast<char*>(dyn.sym[sym].st_value + load_base_addr);
+                    const char* dst = reinterpret_cast<const char*>(dep->dyn.sym->st_value + dep->load_base_addr);
                     strcpy(src, dst);
 
                     // needed_symbols.erase(std::remove(needed_symbols.begin(),
                     //     needed_symbols.end(), sym), needed_symbols.end());
                 }
             }
-            dep_dyn_sym++;
-        } while (ELF64_ST_TYPE(dep_dyn_sym->st_info) != STT_NOTYPE);
+            dep->dyn.sym += 1;
+        } while (ELF64_ST_TYPE(dep->dyn.sym->st_info) != STT_NOTYPE);
     }
 
-    void Loadable::apply_basic_dyn_relocations(void) {
-        if (dyn_rela.addr == nullptr){
+    void Loadable::apply_basic_dyn_relocations(const struct rela_table& rela) {
+        if (rela.addr == nullptr){
             return;
         }
 
-        for (Elf64_Word i = 0; i < (dyn_rela.total_size / dyn_rela.entry_size); i++) {
-            Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_offset + load_base_addr);
-            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn_sym + ELF64_R_SYM(dyn_rela.addr[i].r_info));
-            switch (ELF64_R_TYPE(dyn_rela.addr[i].r_info)) {
+        for (Elf64_Word i = 0; i < (rela.total_size / rela.entry_size); i++) {
+            Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(rela.addr[i].r_offset + load_base_addr);
+            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn.sym + ELF64_R_SYM(rela.addr[i].r_info));
+            switch (ELF64_R_TYPE(rela.addr[i].r_info)) {
                 case R_X86_64_RELATIVE:
-                    *addr = dyn_rela.addr[i].r_addend + load_base_addr;
+                    *addr = rela.addr[i].r_addend + load_base_addr;
                     break;
                 case R_X86_64_64:
-                    *addr = dyn_rela.addr[i].r_addend + load_base_addr + sym->st_value;
+                    *addr = rela.addr[i].r_addend + load_base_addr + sym->st_value;
                     break;
                 case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
                     needed_symbols.insert(i);
-                    // *addr = *reinterpret_cast<Elf64_Addr*>(dyn_rela.addr[i].r_addend + load_base_addr);
+                    // *addr = *reinterpret_cast<Elf64_Addr*>(dyn.rela.addr[i].r_addend + load_base_addr);
+                    break;
+                case R_X86_64_IRELATIVE:
+                    *addr = reinterpret_cast<Elf64_Addr>(rela.addr[i].r_addend + load_base_addr);
                     break;
                 default:
                     std::cerr << "Unknown relocation type\n";
@@ -206,14 +225,5 @@ namespace Roee_ELF {
 
 /*
 plan:
-1. build dep tree - read each file (starting from current executable)
-   parse dyn section and get needed libraries
-   if needed lib is already referenced, add shared_ptr it.
-   load lib to mem
-   for every lib, call the same function (parse dyn section and get needed libraries)
-
-   after the recursion ends, we have a tree of dependencies
-   for each node, resolve relocations
-
 
 */

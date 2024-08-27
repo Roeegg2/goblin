@@ -12,6 +12,12 @@
 namespace Roee_ELF {
     constexpr uint16_t PAGE_SIZE = 0x1000;
 
+    struct rela_table {
+        Elf64_Rela* addr;
+        Elf64_Xword total_size;
+        static constexpr Elf64_Xword entry_size = 24;
+    };
+
     class Loadable : public ELF_File {
     public:
         Loadable(const char* file_path);
@@ -25,7 +31,7 @@ namespace Roee_ELF {
         void map_load_segments(void);
         void set_correct_permissions(void);
         void apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep);
-        void apply_basic_dyn_relocations(void);
+        void  apply_basic_dyn_relocations(const struct rela_table& rela);
 
     protected:
         static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
@@ -41,12 +47,15 @@ namespace Roee_ELF {
         int mmap_elf_file_fd; // file descriptor for mmap
 
         struct {
-            Elf64_Rela* addr;
-            Elf64_Xword total_size;
-            Elf64_Xword entry_size;
-        } dyn_rela;
-        Elf64_Sym* dyn_sym;
-        char* dyn_str;
+            struct rela_table rela;
+            Elf64_Sym* sym;
+            char* str;
+        } dyn;
+
+        struct {
+            rela_table rela;
+            Elf64_Addr* got;
+        } plt;
 
         std::set<Elf64_Word> needed_symbols; // indices of symbols that are needed from the external libraries
         std::set<std::shared_ptr<Loadable>> dependencies; // list of Loader objects that contain the needed symbols
