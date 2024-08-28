@@ -9,7 +9,7 @@
         MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
 namespace Roee_ELF {
-    ELF_File::ELF_File(const char* file_path) {
+    ELF_File::ELF_File(std::string file_path) : elf_file_path(file_path){
         elf_file.open(file_path, std::ios::binary);
         if (!elf_file.is_open()) {
             std::cerr << "Failed to open ELF file\n";

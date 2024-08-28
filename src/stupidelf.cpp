@@ -3,7 +3,7 @@
 using namespace Roee_ELF;
 
 int main() {
-    Executable* executable = new Executable("tests/hello");
+    Executable* executable = new Executable("tests/hello-dl");
 
 #ifdef DEBUG
     executable->full_print();

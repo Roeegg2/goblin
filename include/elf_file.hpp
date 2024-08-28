@@ -3,11 +3,12 @@
 
 #include <elf.h>
 #include <fstream>
+#include <filesystem>
 
 namespace Roee_ELF {
     class ELF_File {
     public:
-        ELF_File(const char* file_name);
+        ELF_File(std::string file_path);
         ~ELF_File(void);
         void full_parse(void);
         void parse_elf_header(void);
@@ -35,6 +36,7 @@ namespace Roee_ELF {
         void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
 
     public:
+        std::filesystem::path elf_file_path;
         std::ifstream elf_file;
 
         Elf64_Ehdr elf_header;

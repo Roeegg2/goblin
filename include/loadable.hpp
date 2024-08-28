@@ -7,7 +7,6 @@
 #include <set>
 #include <memory>
 #include <vector>
-
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
 
 namespace Roee_ELF {
@@ -21,7 +20,7 @@ namespace Roee_ELF {
 
     class Loadable : public ELF_File {
     public:
-        Loadable(const char* file_path);
+        Loadable(std::string file_path);
         ~Loadable();
 #ifdef DEBUG
         void print_dynamic_segment(void) const;
@@ -41,11 +40,17 @@ namespace Roee_ELF {
 
         void build_shared_objs_tree(void);
 
+        bool resolve_path_rpath(std::string& path, const char* shared_obj_name) const;
+        static bool resolve_path_ld_library_path(std::string& path, const char* shared_obj_name);
+        bool resolve_path_default(std::string& path, const char* shared_obj_name) const;
+
+
     public:
         Elf64_Addr load_base_addr;
         std::vector<void*> segment_data;
-        int16_t dyn_seg_index;
 
+        char* rpath;
+        int16_t dyn_seg_index;
         struct {
             struct rela_table rela;
             Elf64_Sym* sym;
@@ -59,6 +64,8 @@ namespace Roee_ELF {
 
         std::set<Elf64_Word> needed_symbols; // indices of symbols that are needed from the external libraries
         std::set<std::shared_ptr<Loadable>> dependencies; // list of Loader objects that contain the needed symbols
+
+        static const char* DEFAULT_SHARED_OBJ_PATHS[];
     };
 }
 

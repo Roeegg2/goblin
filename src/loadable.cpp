@@ -8,8 +8,17 @@
 #include <iostream>
 #include <cstring>
 
+extern char** environ;
+
 namespace Roee_ELF {
-    Loadable::Loadable(const char* file_path)
+    const char* Loadable::DEFAULT_SHARED_OBJ_PATHS[] {
+        "/lib/",
+        "/usr/lib/",
+        "/lib64/",
+        "/usr/lib64/",
+    };
+
+    Loadable::Loadable(std::string file_path)
         : ELF_File(file_path), dyn_seg_index(-1), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
         full_parse();
         segment_data.reserve(elf_header.e_phnum);
@@ -21,6 +30,16 @@ namespace Roee_ELF {
                 munmap(segment_data[i], prog_headers[i].p_memsz);
             }
         }
+    }
+
+    bool find_file(const std::filesystem::path& directory, const std::string& filename, std::string& found_path) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            if (entry.is_regular_file() && entry.path().filename() == filename) {
+                found_path = entry.path().string();
+                return true;
+            }
+        }
+        return false;
     }
 
     void Loadable::parse_dyn_segment(void) {
@@ -56,16 +75,56 @@ namespace Roee_ELF {
             case DT_NEEDED: // name of a shared object we need to load
                 dt_needed_list.insert(dyn_table->d_un.d_val);
                 break;
+            case DT_RPATH:
+                rpath = reinterpret_cast<char*>(dyn_table->d_un.d_val);
+                break;
             }
             dyn_table++;
         }
 
-        for (auto dt_needed : dt_needed_list) { // for each SO
-            // TODO: BEFORE CREATING NEW LOADABLE, CHECK IF IT ALREADY EXISTS
-            std::string str = "/home/roeet/Projects/stupidelf/tests/";
-            str += dyn.str + dt_needed;
-            dependencies.insert(std::make_shared<Loadable>(str.c_str()));
+        if (rpath != nullptr) {
+            rpath = reinterpret_cast<Elf64_Addr>(dyn.str) + rpath; // adding the offset (current value of rpath) with the dynstr table
         }
+
+        for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
+            std::string path;
+            if (resolve_path_rpath(path, dyn.str + dt_needed) ||
+                resolve_path_ld_library_path(path, dyn.str + dt_needed) ||
+                resolve_path_default(path, dyn.str + dt_needed)) {
+
+                std::cout << path << std::endl;
+                dependencies.insert(std::make_shared<Loadable>(path.c_str()));
+                continue;
+            }
+
+            dependencies.insert(std::make_shared<Loadable>(path.c_str()));
+        }
+    }
+
+    bool Loadable::resolve_path_rpath(std::string& path, const char* shared_obj_name) const {
+        if ((rpath != nullptr) && (std::strcmp(rpath, "$ORIGIN") == 0) ) {
+            return find_file(elf_file_path.parent_path(), shared_obj_name, path);
+        }
+        return false;
+    }
+
+    bool Loadable::resolve_path_ld_library_path(std::string& path, const char* shared_obj_name) {
+        char* ld_library_path;
+        if ((ld_library_path = getenv("LD_LIBRARY_PATH")) == NULL) {
+            return false;
+        }
+
+        return find_file(ld_library_path, shared_obj_name, path);
+    }
+
+    bool Loadable::resolve_path_default(std::string& path, const char* shared_obj_name) const {
+        for (const char* default_dir : DEFAULT_SHARED_OBJ_PATHS) {
+            if (find_file(default_dir, shared_obj_name, path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     uint8_t Loadable::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {

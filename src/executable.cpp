@@ -8,15 +8,15 @@
 #include <sys/mman.h>
 
 namespace Roee_ELF {
-    Executable::Executable(const char* file_path)
+    Executable::Executable(std::string file_path)
         : Loadable(file_path) { }
 
     Executable::~Executable(void) { }
 
     void Executable::run(void) { // elf_header.e_entry 0x401655
-        if (elf_header.e_type == ET_EXEC) {
-            remap_loader_segments();
-        }
+        // if (elf_header.e_type == ET_EXEC) {
+        //     remap_loader_segments();
+        // }
         build_shared_objs_tree();
 
 #ifdef DEBUG

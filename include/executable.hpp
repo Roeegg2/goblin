@@ -14,7 +14,7 @@ namespace Roee_ELF {
 
     class Executable final : public Loadable{
     public:
-        Executable(const char* file_path);
+        Executable(std::string file_path);
         ~Executable(void);
         void run(void);
 
