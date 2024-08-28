@@ -3,7 +3,7 @@
 using namespace Roee_ELF;
 
 int main() {
-    Executable* executable = new Executable("tests/ifunc-nolibc");
+    Executable* executable = new Executable("tests/hello");
 
 #ifdef DEBUG
     executable->full_print();

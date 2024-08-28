@@ -44,9 +44,7 @@ namespace Roee_ELF {
     public:
         Elf64_Addr load_base_addr;
         std::vector<void*> segment_data;
-        // void** segment_data;
         int16_t dyn_seg_index;
-        // int mmap_elf_file_fd; // file descriptor for mmap
 
         struct {
             struct rela_table rela;

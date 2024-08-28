@@ -10,7 +10,7 @@
 
 namespace Roee_ELF {
     Loadable::Loadable(const char* file_path)
-        : ELF_File(file_path), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
+        : ELF_File(file_path), dyn_seg_index(-1), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
         full_parse();
         segment_data.reserve(elf_header.e_phnum);
     }
@@ -162,18 +162,18 @@ namespace Roee_ELF {
             apply_dep_dyn_relocations(dep);
         }
 
-        // set_correct_permissions();
+        set_correct_permissions();
     }
 
     void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
         Elf64_Sym* dep_dyn_sym = dep->dyn.sym + 1; // dont want to change the actual pointer | incrementing by one to skip the null
         do { // for every needed DYN symbols of the dependency
-            std::string lib_sym_name = dep->dyn.str + dep->dyn.sym->st_name;
+            std::string dep_sym_name = dep->dyn.str + dep_dyn_sym->st_name;
             for (auto sym : needed_symbols) { // for every needed DYN symbol
                 std::string org_sym_name = dyn.str + dyn.sym[sym].st_name; // construct the corresponding symbol name to check
-                if (lib_sym_name == org_sym_name) {
+                if (dep_sym_name == org_sym_name) {
                     char* src = reinterpret_cast<char*>(dyn.sym[sym].st_value + load_base_addr);
-                    const char* dst = reinterpret_cast<const char*>(dep->dyn.sym->st_value + dep->load_base_addr);
+                    const char* dst = reinterpret_cast<const char*>(dep_dyn_sym->st_value + dep->load_base_addr);
                     strcpy(src, dst);
                 }
             }
