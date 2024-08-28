@@ -9,7 +9,7 @@
         MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
 namespace Roee_ELF {
-    ELF_File::ELF_File(const char* file_path) : dyn_seg_index(-1) {
+    ELF_File::ELF_File(const char* file_path) {
         elf_file.open(file_path, std::ios::binary);
         if (!elf_file.is_open()) {
             std::cerr << "Failed to open ELF file\n";
@@ -85,9 +85,6 @@ namespace Roee_ELF {
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_filesz), 8); // size of segment in file
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_memsz), 8); // size of segment in memory
             elf_file.read(reinterpret_cast<char*>(&prog_headers[i].p_align), 8); // alignment
-
-            if (prog_headers[i].p_type == PT_DYNAMIC)
-                dyn_seg_index = i;
         }
     }
 

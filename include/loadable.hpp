@@ -6,6 +6,7 @@
 #include <elf.h>
 #include <set>
 #include <memory>
+#include <vector>
 
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
 
@@ -27,13 +28,13 @@ namespace Roee_ELF {
         void print_dynamic_tag(Elf64_Sxword tag) const;
 #endif
         void parse_dyn_segment(void);
-        void map_dyn_segment(void);
-        void map_load_segments(void);
+        void map_segments(void);
         void set_correct_permissions(void);
         void apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep);
         void  apply_basic_dyn_relocations(const struct rela_table& rela);
 
     protected:
+        void alloc_mem_for_segments(void);
         static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
         static int elf_perm_to_mmap_perms(uint32_t const elf_flags);
         uint32_t get_total_page_count(void);
@@ -42,9 +43,10 @@ namespace Roee_ELF {
 
     public:
         Elf64_Addr load_base_addr;
-
-        void** segment_data;
-        int mmap_elf_file_fd; // file descriptor for mmap
+        std::vector<void*> segment_data;
+        // void** segment_data;
+        int16_t dyn_seg_index;
+        // int mmap_elf_file_fd; // file descriptor for mmap
 
         struct {
             struct rela_table rela;
