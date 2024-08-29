@@ -17,10 +17,6 @@ namespace Roee_ELF {
         Executable(std::string file_path);
         ~Executable(void);
         void run(void);
-
-    private:
-        static void remap_loader_segments(void);
-        static uint8_t proc_maps_perms_to_mmap_perms(const char str_perms[4]);
     };
 }
 

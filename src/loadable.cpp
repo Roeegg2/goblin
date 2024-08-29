@@ -1,5 +1,6 @@
 #include "../include/loadable.hpp"
 
+#include <cerrno>
 #include <elf.h>
 #include <fcntl.h>
 #include <memory>
@@ -19,7 +20,7 @@ namespace Roee_ELF {
     };
 
     Loadable::Loadable(std::string file_path)
-        : ELF_File(file_path), dyn_seg_index(-1), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
+        : ELF_File(file_path), dyn_seg_index(-1), rpath(nullptr), runpath(nullptr), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
         full_parse();
         segment_data.reserve(elf_header.e_phnum);
     }
@@ -48,7 +49,6 @@ namespace Roee_ELF {
         }
 
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
-        std::set<Elf64_Xword> dt_needed_list; // list of DT_NEEDED entries - list of SOs we need to load
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
             case DT_RELA: // dyn rela table
@@ -78,33 +78,54 @@ namespace Roee_ELF {
             case DT_RPATH:
                 rpath = reinterpret_cast<char*>(dyn_table->d_un.d_val);
                 break;
+            case DT_RUNPATH:
+                runpath = reinterpret_cast<char*>(dyn_table->d_un.d_val);
+                break;
             }
             dyn_table++;
         }
 
+        // doing this later because we need to get dyn.str first
         if (rpath != nullptr) {
             rpath = reinterpret_cast<Elf64_Addr>(dyn.str) + rpath; // adding the offset (current value of rpath) with the dynstr table
         }
+        if (runpath != nullptr) {
+            runpath = reinterpret_cast<Elf64_Addr>(dyn.str) + runpath; // adding the offset (current value of runpath) with the dynstr table
+        }
+    }
 
+    void Loadable::construct_loadeables_for_shared_objects(void) {
         for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
             std::string path;
             if (resolve_path_rpath(path, dyn.str + dt_needed) ||
                 resolve_path_ld_library_path(path, dyn.str + dt_needed) ||
                 resolve_path_default(path, dyn.str + dt_needed)) {
 
-                std::cout << path << std::endl;
+                std::cout << "Loading shared object \"" << path << "\"" << std::endl;
                 dependencies.insert(std::make_shared<Loadable>(path.c_str()));
                 continue;
             }
 
-            dependencies.insert(std::make_shared<Loadable>(path.c_str()));
+            std::cerr << "Failed to resolve path for shared object: " << dyn.str + dt_needed << std::endl;
+            exit(1);
         }
+
+        dt_needed_list.clear();
     }
 
     bool Loadable::resolve_path_rpath(std::string& path, const char* shared_obj_name) const {
-        if ((rpath != nullptr) && (std::strcmp(rpath, "$ORIGIN") == 0) ) {
-            return find_file(elf_file_path.parent_path(), shared_obj_name, path);
+        if ((rpath != nullptr) && (std::strcmp(rpath, "$ORIGIN") == 0)) {
+            if (find_file(elf_file_path.parent_path(), shared_obj_name, path)) {
+                return true;
+            }
         }
+
+        if ((runpath != nullptr) && (std::strcmp(runpath, "$ORIGIN") == 0)) {
+            if (find_file(elf_file_path.parent_path(), shared_obj_name, path)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -159,6 +180,16 @@ namespace Roee_ELF {
         load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void*>(load_base_addr),
             total_page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
+        if (reinterpret_cast<void*>(load_base_addr) == MAP_FAILED) {
+            if (errno == EADDRINUSE) {
+
+            }
+            else {
+                std::cerr << "mmap failed" << std::endl;
+                exit(1);
+            }
+        }
+
         if (elf_header.e_type == ET_EXEC)
             load_base_addr = 0x0;
     }
@@ -212,6 +243,7 @@ namespace Roee_ELF {
     void Loadable::build_shared_objs_tree(void) {
         map_segments();
         parse_dyn_segment();
+        construct_loadeables_for_shared_objects();
         apply_basic_dyn_relocations(dyn.rela);
         // if not doing lazy binding
         apply_basic_dyn_relocations(plt.rela);
@@ -263,10 +295,29 @@ namespace Roee_ELF {
                     *addr = reinterpret_cast<Elf64_Addr>(
                         reinterpret_cast<Elf64_Addr (*)()>(rela.addr[i].r_addend + load_base_addr)());
                     break;
+                case R_X86_64_JUMP_SLOT:
+                case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
+                    *addr = sym->st_value + load_base_addr;
+                    break;
+                case R_X86_64_DTPMOD64:
+                case R_X86_64_DTPOFF64:
+                case R_X86_64_TPOFF64:
+                case R_X86_64_TLSGD:
+                case R_X86_64_TLSLD:
+                case R_X86_64_DTPOFF32:
+                case R_X86_64_GOTTPOFF:
+                case R_X86_64_TPOFF32:
+                case R_X86_64_TLSDESC_CALL:
+                    break;
                 default:
-                    std::cerr << "Unknown relocation type\n";
+                    std::cerr << "Unknown relocation type: " << std::dec << ELF64_R_TYPE(rela.addr[i].r_info) << "\n";
                     exit(1);
             }
         }
     }
 }
+
+/*
+
+
+*/
