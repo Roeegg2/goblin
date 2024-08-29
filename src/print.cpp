@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 
-namespace Roee_ELF {
+namespace Goblin {
     void ELF_File::full_print() const {
         print_file_info();
         print_prog_headers();

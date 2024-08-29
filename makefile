@@ -6,7 +6,7 @@ FLAGS = -Wall -pedantic -std=c++20 -DDEBUG -g -fPIC -Werror -Wextra
 ASMFLAGS = -f elf64
 
 elf: init $(OBJ)
-	$(CC) $(OBJ) -o stupidelf
+	$(CC) $(OBJ) -static -o goblin
 
 bin/%.o: src/x86_64/%.S
 	nasm $(ASMFLAGS) $< -o $@

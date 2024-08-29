@@ -4,8 +4,9 @@
 #include <elf.h>
 #include <fstream>
 #include <filesystem>
+#include <vector>
 
-namespace Roee_ELF {
+namespace Goblin {
     class ELF_File {
     public:
         ELF_File(std::string file_path);
@@ -14,7 +15,6 @@ namespace Roee_ELF {
         void parse_elf_header(void);
         void parse_prog_headers(void);
         void parse_sect_headers(void);
-        void get_section_data(const uint16_t i);
 
 #ifdef DEBUG
         void full_print(void) const;
@@ -42,6 +42,7 @@ namespace Roee_ELF {
         Elf64_Ehdr elf_header;
         Elf64_Phdr* prog_headers;
         Elf64_Shdr* sect_headers;
+        std::vector<const char*> sect_names;
     };
 }
 

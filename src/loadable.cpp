@@ -1,6 +1,7 @@
 #include "../include/loadable.hpp"
 
 #include <cerrno>
+#include <cstdint>
 #include <elf.h>
 #include <fcntl.h>
 #include <memory>
@@ -9,9 +10,13 @@
 #include <iostream>
 #include <cstring>
 
-extern char** environ;
+extern "C" {
+    char** environ;
+    extern void _my_dl_open(void);
+    extern void _my_exit();
+};
 
-namespace Roee_ELF {
+namespace Goblin {
     const char* Loadable::DEFAULT_SHARED_OBJ_PATHS[] {
         "/lib/",
         "/usr/lib/",
@@ -20,7 +25,9 @@ namespace Roee_ELF {
     };
 
     Loadable::Loadable(std::string file_path)
-        : ELF_File(file_path), dyn_seg_index(-1), rpath(nullptr), runpath(nullptr), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
+        : ELF_File(file_path), dyn_seg_index(-1),
+        rpath(nullptr), runpath(nullptr), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
+
         full_parse();
         segment_data.reserve(elf_header.e_phnum);
     }
@@ -94,6 +101,34 @@ namespace Roee_ELF {
         }
     }
 
+//     void Loadable::glibc_setup_self(void) {
+//         uint8_t found;
+//         Elf64_Sym* sym = dyn.sym;
+//         for (uint8_t i = 0; i < (sect_headers[6].sh_size / sect_headers[6].sh_entsize); i++) {
+//             if (!(found & 0b0000'0001) && std::strncmp(sym[i].st_name + dyn.str, "_exit", 5)) {
+//                 void* ptr = reinterpret_cast<void*>(sym[i].st_value + sect_headers[sym[i].st_shndx].sh_addr + load_base_addr);
+//                 if (mprotect(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ptr) & ~(4095)), 4096, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+//                     perror("mprotect failed");
+//                     return;
+//                 }
+
+//                 *reinterpret_cast<void**>(ptr) = reinterpret_cast<void*>(_my_exit);
+//                 found |= 0b0000'0001;
+// #ifdef DEBUG
+//                 std::cout << "Found _exit at " << reinterpret_cast<const char*>(sym[i].st_name + dyn.str) << std::endl;
+// #endif
+//                 continue;
+//             }
+// //             if (!(found & 0b0000'0010) && std::strncmp(sym[i].st_name + dyn.str, "_dl_addr", )) {
+
+// // #ifdef DEBUG
+// //                 std::cout << "Found _dl_addr at " << reinterpret_cast<const char*>(sym[i].st_name + dyn.str) << std::endl;
+// // #endif
+// //                 continue;
+// //             }
+//         }
+//     }
+
     void Loadable::construct_loadeables_for_shared_objects(void) {
         for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
             std::string path;
@@ -148,7 +183,7 @@ namespace Roee_ELF {
         return false;
     }
 
-    uint8_t Loadable::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
+    uint32_t Loadable::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
         return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
@@ -208,10 +243,12 @@ namespace Roee_ELF {
                 break;
             case PT_DYNAMIC:
                 dyn_seg_index = i; // save the index of the dynamic segment
-                segment_data[dyn_seg_index] = mmap(NULL, // allocate mem
+                segment_data[i] = mmap(NULL, // allocate mem
                     get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr) * PAGE_SIZE,
-                    PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS,-1, 0);
+                    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1, 0);
                 break;
+            case PT_TLS:
+                std::cout << "TLS segment found" << std::endl;
             default:
                 continue;
             }
@@ -228,7 +265,7 @@ namespace Roee_ELF {
 
     void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
+            if ((prog_headers[i].p_type == PT_LOAD) && (prog_headers[i].p_memsz > 0)) {
                 const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
 
                 if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
@@ -248,6 +285,9 @@ namespace Roee_ELF {
         // if not doing lazy binding
         apply_basic_dyn_relocations(plt.rela);
 
+        if (elf_file_path.filename() == "libc.so.6") {
+            std::cout << "located glibc!!\n";
+        }
         for (auto& dep : dependencies) {
             dep->build_shared_objs_tree();
             apply_dep_dyn_relocations(dep);
@@ -297,6 +337,7 @@ namespace Roee_ELF {
                     break;
                 case R_X86_64_JUMP_SLOT:
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
+                    std::cout << std::hex << sym->st_value << " and " << rela.addr[i].r_offset << std::dec << "\n";
                     *addr = sym->st_value + load_base_addr;
                     break;
                 case R_X86_64_DTPMOD64:

@@ -8,7 +8,7 @@
     mmap_wrapper(reinterpret_cast<void**>(&sect_data), 0x0, sect_headers[sect_index].sh_size, PROT_READ, \
         MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
-namespace Roee_ELF {
+namespace Goblin {
     ELF_File::ELF_File(std::string file_path) : elf_file_path(file_path){
         elf_file.open(file_path, std::ios::binary);
         if (!elf_file.is_open()) {

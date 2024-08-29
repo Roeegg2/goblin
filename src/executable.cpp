@@ -1,11 +1,13 @@
 #include "../include/executable.hpp"
 
 #include <cstring>
+#ifdef DEBUG
 #include <iostream>
+#endif
 #include <elf.h>
 #include <sys/mman.h>
 
-namespace Roee_ELF {
+namespace Goblin {
     Executable::Executable(std::string file_path)
         : Loadable(file_path) { }
 

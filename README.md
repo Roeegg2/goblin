@@ -1,5 +1,8 @@
-# stupidelf
+# Goblin
 
-Ever wanted to load a loadable which will load your 64bit x86 ELF binaries? Well, now you can!
+GOBLIN - the Generally Ok Binary Linker and INterpreter
 
-Currently the loadable supports only ELF files which do not use libc, support for other architectures and for libc programs will come very soon
+Goblin is a work-in-progress ELF binary linker and interpreter, written out of curiosity to see how far one could get about loading and
+dynamically linking ELF binaries in userspace.
+
+Currently only supports x86_64 binaries.

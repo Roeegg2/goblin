@@ -10,7 +10,7 @@
 
 #define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
 
-namespace Roee_ELF {
+namespace Goblin {
     constexpr uint16_t PAGE_SIZE = 0x1000;
 
     struct rela_table {
@@ -31,11 +31,11 @@ namespace Roee_ELF {
         void map_segments(void);
         void set_correct_permissions(void);
         void apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep);
-        void  apply_basic_dyn_relocations(const struct rela_table& rela);
+        void apply_basic_dyn_relocations(const struct rela_table& rela);
 
     protected:
         void alloc_mem_for_segments(void);
-        static uint8_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
+        static uint32_t get_page_count(Elf64_Xword memsz, Elf64_Addr addr);
         static int elf_perm_to_mmap_perms(uint32_t const elf_flags);
         uint32_t get_total_page_count(void);
 
@@ -44,8 +44,6 @@ namespace Roee_ELF {
         bool resolve_path_rpath(std::string& path, const char* shared_obj_name) const;
         static bool resolve_path_ld_library_path(std::string& path, const char* shared_obj_name);
         bool resolve_path_default(std::string& path, const char* shared_obj_name) const;
-
-
     public:
         Elf64_Addr load_base_addr;
         std::vector<void*> segment_data;
@@ -63,6 +61,7 @@ namespace Roee_ELF {
             rela_table rela;
             Elf64_Addr* got;
         } plt;
+
 
         std::set<Elf64_Word> needed_symbols; // indices of symbols that are needed from the external libraries
         std::set<std::shared_ptr<Loadable>> dependencies; // list of Loader objects that contain the needed symbols
