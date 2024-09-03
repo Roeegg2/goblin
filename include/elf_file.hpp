@@ -4,7 +4,6 @@
 #include <elf.h>
 #include <fstream>
 #include <filesystem>
-#include <vector>
 
 namespace Goblin {
     class ELF_File {
@@ -30,19 +29,18 @@ namespace Goblin {
 
         void print_symtab(void) const;
 #endif
-    protected:
+    private:
         inline void check_elf_header_magic(void);
         inline void check_elf_header_class(void);
         void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
 
-    public:
+    protected:
         std::filesystem::path elf_file_path;
         std::ifstream elf_file;
 
         Elf64_Ehdr elf_header;
         Elf64_Phdr* prog_headers;
         Elf64_Shdr* sect_headers;
-        std::vector<const char*> sect_names;
     };
 }
 

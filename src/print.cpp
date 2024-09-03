@@ -97,7 +97,7 @@ namespace Goblin {
         }
     }
 
-    void Loadable::print_dynamic_tag(Elf64_Sxword tag) const {
+    void Loadable::print_dynamic_tag(const Elf64_Sxword tag) const {
         if (dyn_seg_index == -1) {
             std::cout << "No dynamic segment found\n";
             return;

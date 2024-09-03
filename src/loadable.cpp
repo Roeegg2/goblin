@@ -1,6 +1,7 @@
 #include "../include/loadable.hpp"
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <elf.h>
 #include <fcntl.h>
@@ -50,7 +51,7 @@ namespace Goblin {
         return false;
     }
 
-    void Loadable::parse_dyn_segment(void) {
+    void Loadable::parse_dyn_segment(std::set<Elf64_Xword>& dt_needed_list) {
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
@@ -97,7 +98,7 @@ namespace Goblin {
         }
     }
 
-    void Loadable::construct_loadeables_for_shared_objects(void) {
+    void Loadable::construct_loadeables_for_shared_objects(const std::set<Elf64_Xword>& dt_needed_list) {
         for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
             std::string path;
             if (std::strcmp(dyn.str + dt_needed, "ld-linux-x86-64.so.2") == 0) {
@@ -120,8 +121,6 @@ namespace Goblin {
             std::cerr << "Failed to resolve path for shared object: " << dyn.str + dt_needed << "\n";
             exit(1);
         }
-
-        dt_needed_list.clear();
     }
 
     bool Loadable::resolve_path_rpath_runpath(const char* r_run_path, std::string& path, const char* shared_obj_name) const {
@@ -153,11 +152,11 @@ namespace Goblin {
         return false;
     }
 
-    uint32_t Loadable::get_page_count(Elf64_Xword memsz, Elf64_Addr addr) {
+    uint32_t Loadable::get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
         return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
-    int Loadable::elf_perm_to_mmap_perms(uint32_t const elf_flags) {
+    int Loadable::elf_perm_to_mmap_perms(const uint32_t elf_flags) {
         int mmap_flags = 0;
 
         if (elf_flags & 0x1) mmap_flags |= PROT_EXEC;
@@ -167,7 +166,7 @@ namespace Goblin {
         return mmap_flags;
     }
 
-    uint32_t Loadable::get_total_page_count(void) {
+    uint32_t Loadable::get_total_page_count(void) const {
         uint32_t total_page_count = 0;
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
             if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
@@ -250,20 +249,16 @@ namespace Goblin {
         }
     }
 
-    void Loadable::init_tls_segment(void) {
-
-    }
-
     void Loadable::build_shared_objs_tree(void) {
         map_segments();
         if (dyn_seg_index >= 0){
-            parse_dyn_segment();
-        }
-        construct_loadeables_for_shared_objects();
-        apply_basic_dyn_relocations(dyn.rela);
-        apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
-        if (tls_seg_index >= 0) {
-            init_tls_segment();
+            {
+                std::set<Elf64_Xword> dt_needed_list;
+                parse_dyn_segment(dt_needed_list);
+                construct_loadeables_for_shared_objects(dt_needed_list); // for each shared object dependency, create a Loadable object
+            }
+            apply_basic_dyn_relocations(dyn.rela); // applying basic relocations
+            apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
         }
 
         for (auto& dep : dependencies) { // for every shared object dependency
