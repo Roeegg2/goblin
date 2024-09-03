@@ -21,7 +21,7 @@ namespace Goblin {
 
     class Loadable : public ELF_File {
     public:
-        Loadable(std::string file_path);
+        Loadable(const std::string file_path);
         ~Loadable();
 #ifdef DEBUG
         void print_dynamic_segment(void) const;
@@ -42,7 +42,7 @@ namespace Goblin {
         void apply_basic_dyn_relocations(const struct rela_table& rela);
 
         static int elf_perm_to_mmap_perms(const uint32_t elf_flags);
-        static uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
+        inline static uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
         uint32_t get_total_page_count(void) const;
 
     protected:

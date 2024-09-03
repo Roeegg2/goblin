@@ -9,7 +9,7 @@
         MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
 
 namespace Goblin {
-    ELF_File::ELF_File(std::string file_path) : elf_file_path(file_path){
+    ELF_File::ELF_File(const std::string file_path) : elf_file_path(file_path){
         elf_file.open(file_path, std::ios::binary);
         if (!elf_file.is_open()) {
             std::cerr << "Failed to open ELF file\n";
@@ -105,5 +105,30 @@ namespace Goblin {
             elf_file.read(reinterpret_cast<char*>(&sect_headers[i].sh_addralign), 8); // alignment
             elf_file.read(reinterpret_cast<char*>(&sect_headers[i].sh_entsize), 8); // size of each entry if section holds a table
         }
+    }
+
+    unsigned long ELF_File::elf_hash(const unsigned char* name) {
+        unsigned long hash = 0;
+        unsigned long g;
+
+        while (*name) {
+            hash = (hash << 4) + *name++;
+            g = hash & 0xF0000000;
+            if (g != 0)
+                hash ^= g >> 24;
+            hash &= ~g;
+        }
+
+        return hash;
+    }
+
+    unsigned long ELF_File::gnu_hash(const unsigned char *name) {
+        unsigned long h = 5381;
+
+        for (unsigned char c = *name; c != '\0'; c = *++name) {
+            h = (h << 5) + h + c;
+        }
+
+        return h;
     }
 };

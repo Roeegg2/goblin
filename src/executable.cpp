@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 
 namespace Goblin {
-    Executable::Executable(std::string file_path)
+    Executable::Executable(const std::string file_path)
         : Loadable(file_path) { }
 
     Executable::~Executable(void) { }

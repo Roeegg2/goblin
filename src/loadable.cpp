@@ -25,7 +25,7 @@ namespace Goblin {
         "/usr/lib64/",
     };
 
-    Loadable::Loadable(std::string file_path)
+    Loadable::Loadable(const std::string file_path)
         : ELF_File(file_path), dyn_seg_index(-1), tls_seg_index(-1),
         rpath(nullptr), runpath(nullptr), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
 
@@ -101,12 +101,6 @@ namespace Goblin {
     void Loadable::construct_loadeables_for_shared_objects(const std::set<Elf64_Xword>& dt_needed_list) {
         for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
             std::string path;
-            if (std::strcmp(dyn.str + dt_needed, "ld-linux-x86-64.so.2") == 0) {
-#ifdef INFO
-                std::cout << "Skipping ld-linux-x86-64.so.2...\n";
-#endif
-                continue;
-            }
             if (resolve_path_rpath_runpath(rpath, path, dyn.str + dt_needed) ||
                 resolve_path_rpath_runpath(runpath, path, dyn.str + dt_needed) ||
                 resolve_path_ld_library_path(path, dyn.str + dt_needed) ||
@@ -152,7 +146,7 @@ namespace Goblin {
         return false;
     }
 
-    uint32_t Loadable::get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
+    inline uint32_t Loadable::get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
         return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
@@ -169,7 +163,7 @@ namespace Goblin {
     uint32_t Loadable::get_total_page_count(void) const {
         uint32_t total_page_count = 0;
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if (prog_headers[i].p_type == PT_LOAD && prog_headers[i].p_memsz > 0) {
+            if (((prog_headers[i].p_type == PT_LOAD) || (prog_headers[i].p_type == PT_TLS)) && prog_headers[i].p_memsz > 0) {
                 total_page_count += get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
             }
         }
@@ -216,7 +210,7 @@ namespace Goblin {
                 break;
             case PT_DYNAMIC:
                 dyn_seg_index = i; // save the index of the dynamic segment
-                segment_data[i] = mmap(NULL, // allocate mem (we allocate independently of the PT_LOAD segments, since we don't care about the address it is mapped in - we just need the data)
+                segment_data[i] = mmap(NULL, // allocate mem (we allocate independently of the PT_LOAD and PT_TLS segments, since we don't care about the address it is mapped in - we just need the data)
                     get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr) * PAGE_SIZE,
                     PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1, 0);
                 break;
@@ -237,7 +231,7 @@ namespace Goblin {
 
     void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if ((prog_headers[i].p_type == PT_LOAD) && (prog_headers[i].p_memsz > 0)) {
+            if (((prog_headers[i].p_type == PT_LOAD) || (prog_headers[i].p_type == PT_TLS)) && (prog_headers[i].p_memsz > 0)) {
                 const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
 
                 if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
@@ -257,9 +251,10 @@ namespace Goblin {
                 parse_dyn_segment(dt_needed_list);
                 construct_loadeables_for_shared_objects(dt_needed_list); // for each shared object dependency, create a Loadable object
             }
-            apply_basic_dyn_relocations(dyn.rela); // applying basic relocations
-            apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
         }
+
+        apply_basic_dyn_relocations(dyn.rela); // applying basic relocations
+        apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
 
         for (auto& dep : dependencies) { // for every shared object dependency
             dep->build_shared_objs_tree(); // recursively build the shared objects tree
@@ -270,7 +265,7 @@ namespace Goblin {
     }
 
     void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
-        Elf64_Sym* dep_dyn_sym = dep->dyn.sym + 1; // dont want to change the actual pointer | incrementing by one to skip the null
+        Elf64_Sym* dep_dyn_sym = dep->dyn.sym + 1; // 1. dont want to change the actual pointer 2. incrementing by one to skip the null
         do { // for every needed DYN symbols of the dependency
             std::string dep_sym_name = dep->dyn.str + dep_dyn_sym->st_name;
             for (auto sym : needed_symbols) { // for every needed DYN symbol
@@ -298,7 +293,7 @@ namespace Goblin {
                     *addr = rela.addr[i].r_addend + load_base_addr;
                     break;
                 case R_X86_64_64:
-                    *addr = rela.addr[i].r_addend + load_base_addr + sym->st_value;
+                    *addr = rela.addr[i].r_addend + sym->st_value + load_base_addr;
                     break;
                 case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
                     needed_symbols.insert(i);
@@ -310,7 +305,8 @@ namespace Goblin {
                     break;
                 case R_X86_64_JUMP_SLOT:
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
-                    *addr = sym->st_value + load_base_addr;
+                    *addr = sym->st_value;
+                    std::cout << "offset: " << std::hex << rela.addr[i].r_offset << " sym val: " << sym->st_value << "\n";
                     break;
                 case R_X86_64_DTPMOD64:
                 case R_X86_64_DTPOFF64:

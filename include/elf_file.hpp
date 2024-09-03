@@ -8,7 +8,7 @@
 namespace Goblin {
     class ELF_File {
     public:
-        ELF_File(std::string file_path);
+        ELF_File(const std::string file_path);
         ~ELF_File(void);
         void full_parse(void);
         void parse_elf_header(void);
@@ -29,6 +29,10 @@ namespace Goblin {
 
         void print_symtab(void) const;
 #endif
+    protected:
+        static unsigned long elf_hash(const unsigned char* name);
+        static unsigned long gnu_hash(const unsigned char *name);
+
     private:
         inline void check_elf_header_magic(void);
         inline void check_elf_header_class(void);

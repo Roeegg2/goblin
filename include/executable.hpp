@@ -8,7 +8,7 @@
 namespace Goblin {
     class Executable final : public Loadable{
     public:
-        Executable(std::string file_path);
+        Executable(const std::string file_path);
         ~Executable(void);
         void run(void);
     };
