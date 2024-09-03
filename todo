@@ -1,0 +1,3 @@
+- implement GNU_RELRO support
+- implement ld.so cache support
+- lazy binding support

@@ -1,7 +1,7 @@
 #include "../include/executable.hpp"
 
 #include <cstring>
-#ifdef DEBUG
+#if defined(DEBUG) || defined(INFO)
 #include <iostream>
 #endif
 #include <elf.h>
@@ -19,9 +19,12 @@ namespace Goblin {
 #ifdef DEBUG
         if (dyn_seg_index > 0) {
             print_dynamic_segment();
-            std::cout << "Starting execution...\n";
         }
 #endif
+#ifdef INFO
+        std::cout << "\nStarting execution...\n";
+#endif
+        munmap(segment_data[dyn_seg_index], prog_headers[dyn_seg_index].p_memsz); // Goblin finished doing its magic, so there is no need for the dynamic segment anymore
         void (*start_execution)(void) = reinterpret_cast<void(*)()>(elf_header.e_entry + load_base_addr);
         start_execution();
     }

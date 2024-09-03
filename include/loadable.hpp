@@ -41,14 +41,17 @@ namespace Goblin {
 
         void build_shared_objs_tree(void);
         void construct_loadeables_for_shared_objects(void);
-        bool resolve_path_rpath(std::string& path, const char* shared_obj_name) const;
+        bool resolve_path_rpath_runpath(const char* r_run_path, std::string& path, const char* shared_obj_name) const;
         static bool resolve_path_ld_library_path(std::string& path, const char* shared_obj_name);
         bool resolve_path_default(std::string& path, const char* shared_obj_name) const;
+        void init_tls_segment(void);
+
     public:
         Elf64_Addr load_base_addr;
         std::vector<void*> segment_data;
 
         int16_t dyn_seg_index;
+        int16_t tls_seg_index;
         char* rpath;
         char* runpath;
         struct {

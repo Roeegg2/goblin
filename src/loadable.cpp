@@ -25,7 +25,7 @@ namespace Goblin {
     };
 
     Loadable::Loadable(std::string file_path)
-        : ELF_File(file_path), dyn_seg_index(-1),
+        : ELF_File(file_path), dyn_seg_index(-1), tls_seg_index(-1),
         rpath(nullptr), runpath(nullptr), dyn({{0, 0}, 0, 0}), plt({{0, 0}, 0}) {
 
         full_parse();
@@ -51,10 +51,6 @@ namespace Goblin {
     }
 
     void Loadable::parse_dyn_segment(void) {
-        if (dyn_seg_index < 0){
-            return;
-        }
-
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
@@ -101,61 +97,35 @@ namespace Goblin {
         }
     }
 
-//     void Loadable::glibc_setup_self(void) {
-//         uint8_t found;
-//         Elf64_Sym* sym = dyn.sym;
-//         for (uint8_t i = 0; i < (sect_headers[6].sh_size / sect_headers[6].sh_entsize); i++) {
-//             if (!(found & 0b0000'0001) && std::strncmp(sym[i].st_name + dyn.str, "_exit", 5)) {
-//                 void* ptr = reinterpret_cast<void*>(sym[i].st_value + sect_headers[sym[i].st_shndx].sh_addr + load_base_addr);
-//                 if (mprotect(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ptr) & ~(4095)), 4096, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-//                     perror("mprotect failed");
-//                     return;
-//                 }
-
-//                 *reinterpret_cast<void**>(ptr) = reinterpret_cast<void*>(_my_exit);
-//                 found |= 0b0000'0001;
-// #ifdef DEBUG
-//                 std::cout << "Found _exit at " << reinterpret_cast<const char*>(sym[i].st_name + dyn.str) << std::endl;
-// #endif
-//                 continue;
-//             }
-// //             if (!(found & 0b0000'0010) && std::strncmp(sym[i].st_name + dyn.str, "_dl_addr", )) {
-
-// // #ifdef DEBUG
-// //                 std::cout << "Found _dl_addr at " << reinterpret_cast<const char*>(sym[i].st_name + dyn.str) << std::endl;
-// // #endif
-// //                 continue;
-// //             }
-//         }
-//     }
-
     void Loadable::construct_loadeables_for_shared_objects(void) {
         for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
             std::string path;
-            if (resolve_path_rpath(path, dyn.str + dt_needed) ||
+            if (std::strcmp(dyn.str + dt_needed, "ld-linux-x86-64.so.2") == 0) {
+#ifdef INFO
+                std::cout << "Skipping ld-linux-x86-64.so.2...\n";
+#endif
+                continue;
+            }
+            if (resolve_path_rpath_runpath(rpath, path, dyn.str + dt_needed) ||
+                resolve_path_rpath_runpath(runpath, path, dyn.str + dt_needed) ||
                 resolve_path_ld_library_path(path, dyn.str + dt_needed) ||
                 resolve_path_default(path, dyn.str + dt_needed)) {
-
-                std::cout << "Loading shared object \"" << path << "\"" << std::endl;
+#ifdef INFO
+                std::cout << "Loading shared object \"" << path << "\"\n";
+#endif
                 dependencies.insert(std::make_shared<Loadable>(path.c_str()));
                 continue;
             }
 
-            std::cerr << "Failed to resolve path for shared object: " << dyn.str + dt_needed << std::endl;
+            std::cerr << "Failed to resolve path for shared object: " << dyn.str + dt_needed << "\n";
             exit(1);
         }
 
         dt_needed_list.clear();
     }
 
-    bool Loadable::resolve_path_rpath(std::string& path, const char* shared_obj_name) const {
-        if ((rpath != nullptr) && (std::strcmp(rpath, "$ORIGIN") == 0)) {
-            if (find_file(elf_file_path.parent_path(), shared_obj_name, path)) {
-                return true;
-            }
-        }
-
-        if ((runpath != nullptr) && (std::strcmp(runpath, "$ORIGIN") == 0)) {
+    bool Loadable::resolve_path_rpath_runpath(const char* r_run_path, std::string& path, const char* shared_obj_name) const {
+        if ((r_run_path != nullptr) && (std::strcmp(r_run_path, "$ORIGIN") == 0)) {
             if (find_file(elf_file_path.parent_path(), shared_obj_name, path)) {
                 return true;
             }
@@ -166,7 +136,7 @@ namespace Goblin {
 
     bool Loadable::resolve_path_ld_library_path(std::string& path, const char* shared_obj_name) {
         char* ld_library_path;
-        if ((ld_library_path = getenv("LD_LIBRARY_PATH")) == NULL) {
+        if (((ld_library_path = getenv("LD_LIBRARY_PATH")) == NULL) || (ld_library_path[0] == '\0')) {
             return false;
         }
 
@@ -220,7 +190,7 @@ namespace Goblin {
 
             }
             else {
-                std::cerr << "mmap failed" << std::endl;
+                std::cerr << "mmap failed\n";
                 exit(1);
             }
         }
@@ -238,17 +208,19 @@ namespace Goblin {
             }
 
             switch(prog_headers[i].p_type) {
+            case PT_TLS:
+                tls_seg_index = i; // save the index of TLS segment
+                std::cout << "TLS segment found\n";
+                __attribute__((fallthrough));
             case PT_LOAD:
                 segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr);
                 break;
             case PT_DYNAMIC:
                 dyn_seg_index = i; // save the index of the dynamic segment
-                segment_data[i] = mmap(NULL, // allocate mem
+                segment_data[i] = mmap(NULL, // allocate mem (we allocate independently of the PT_LOAD segments, since we don't care about the address it is mapped in - we just need the data)
                     get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr) * PAGE_SIZE,
                     PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1, 0);
                 break;
-            case PT_TLS:
-                std::cout << "TLS segment found" << std::endl;
             default:
                 continue;
             }
@@ -256,6 +228,7 @@ namespace Goblin {
             elf_file.seekg(prog_headers[i].p_offset);
             elf_file.read(reinterpret_cast<char*>(segment_data[i]), prog_headers[i].p_filesz);
 
+            // As specified in the System V ABI, all data not mapped from file should be zeroed out
             if (prog_headers[i].p_filesz < prog_headers[i].p_memsz) {
                 memset(reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr + prog_headers[i].p_filesz),
                     0, prog_headers[i].p_memsz - prog_headers[i].p_filesz);
@@ -277,23 +250,28 @@ namespace Goblin {
         }
     }
 
+    void Loadable::init_tls_segment(void) {
+
+    }
+
     void Loadable::build_shared_objs_tree(void) {
         map_segments();
-        parse_dyn_segment();
+        if (dyn_seg_index >= 0){
+            parse_dyn_segment();
+        }
         construct_loadeables_for_shared_objects();
         apply_basic_dyn_relocations(dyn.rela);
-        // if not doing lazy binding
-        apply_basic_dyn_relocations(plt.rela);
-
-        if (elf_file_path.filename() == "libc.so.6") {
-            std::cout << "located glibc!!\n";
-        }
-        for (auto& dep : dependencies) {
-            dep->build_shared_objs_tree();
-            apply_dep_dyn_relocations(dep);
+        apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
+        if (tls_seg_index >= 0) {
+            init_tls_segment();
         }
 
-        set_correct_permissions();
+        for (auto& dep : dependencies) { // for every shared object dependency
+            dep->build_shared_objs_tree(); // recursively build the shared objects tree
+            apply_dep_dyn_relocations(dep); // apply the dynamic relocations of the dependency
+        }
+
+        set_correct_permissions(); // set the correct permissions for the segments
     }
 
     void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
@@ -337,7 +315,6 @@ namespace Goblin {
                     break;
                 case R_X86_64_JUMP_SLOT:
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
-                    std::cout << std::hex << sym->st_value << " and " << rela.addr[i].r_offset << std::dec << "\n";
                     *addr = sym->st_value + load_base_addr;
                     break;
                 case R_X86_64_DTPMOD64:
