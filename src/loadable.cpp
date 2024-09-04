@@ -51,24 +51,24 @@ namespace Goblin {
         return false;
     }
 
-    void Loadable::parse_dyn_segment(std::set<Elf64_Xword>& dt_needed_list) {
+    void Loadable::parse_dyn_segment(std::set<Elf64_Xword>& dt_needed_syms) {
         Elf64_Dyn* dyn_table = reinterpret_cast<Elf64_Dyn*>(segment_data[dyn_seg_index]);
         while (dyn_table->d_tag != DT_NULL) {
             switch (dyn_table->d_tag) {
             case DT_RELA: // dyn rela table
-                dyn.rela.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.rela_table.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_JMPREL: // PLT relocation table
                 plt.rela.addr = reinterpret_cast<Elf64_Rela*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_SYMTAB: // dyn symbol table
-                dyn.sym = reinterpret_cast<Elf64_Sym*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.sym_table = reinterpret_cast<Elf64_Sym*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_STRTAB: // dyn string table
-                dyn.str = reinterpret_cast<char*>(dyn_table->d_un.d_ptr + load_base_addr);
+                dyn.str_table = reinterpret_cast<char*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_RELASZ: // dyn rela table total size
-                dyn.rela.total_size = dyn_table->d_un.d_val;
+                dyn.rela_table.total_size = dyn_table->d_un.d_val;
                 break;
             case DT_PLTRELSZ: // PLT relocation table total size
                 plt.rela.total_size = dyn_table->d_un.d_val;
@@ -77,7 +77,7 @@ namespace Goblin {
                 plt.got = reinterpret_cast<Elf64_Addr*>(dyn_table->d_un.d_ptr + load_base_addr);
                 break;
             case DT_NEEDED: // name of a shared object we need to load
-                dt_needed_list.insert(dyn_table->d_un.d_val);
+                dt_needed_syms.insert(dyn_table->d_un.d_val);
                 break;
             case DT_RPATH:
                 rpath = reinterpret_cast<char*>(dyn_table->d_un.d_val);
@@ -89,22 +89,22 @@ namespace Goblin {
             dyn_table++;
         }
 
-        // doing this later because we need to get dyn.str first
+        // doing this later because we need to get dyn.str_table first
         if (rpath != nullptr) {
-            rpath = reinterpret_cast<Elf64_Addr>(dyn.str) + rpath; // adding the offset (current value of rpath) with the dynstr table
+            rpath = reinterpret_cast<Elf64_Addr>(dyn.str_table) + rpath; // adding the offset (current value of rpath) with the dynstr table
         }
         if (runpath != nullptr) {
-            runpath = reinterpret_cast<Elf64_Addr>(dyn.str) + runpath; // adding the offset (current value of runpath) with the dynstr table
+            runpath = reinterpret_cast<Elf64_Addr>(dyn.str_table) + runpath; // adding the offset (current value of runpath) with the dynstr table
         }
     }
 
-    void Loadable::construct_loadeables_for_shared_objects(const std::set<Elf64_Xword>& dt_needed_list) {
-        for (Elf64_Xword dt_needed : dt_needed_list) { // for each SO
+    void Loadable::construct_loadeables_for_shared_objects(const std::set<Elf64_Xword>& dt_needed_syms) {
+        for (Elf64_Xword dt_needed : dt_needed_syms) { // for each SO
             std::string path;
-            if (resolve_path_rpath_runpath(rpath, path, dyn.str + dt_needed) ||
-                resolve_path_rpath_runpath(runpath, path, dyn.str + dt_needed) ||
-                resolve_path_ld_library_path(path, dyn.str + dt_needed) ||
-                resolve_path_default(path, dyn.str + dt_needed)) {
+            if (resolve_path_rpath_runpath(rpath, path, dyn.str_table + dt_needed) ||
+                resolve_path_rpath_runpath(runpath, path, dyn.str_table + dt_needed) ||
+                resolve_path_ld_library_path(path, dyn.str_table + dt_needed) ||
+                resolve_path_default(path, dyn.str_table + dt_needed)) {
 #ifdef INFO
                 std::cout << "Loading shared object \"" << path << "\"\n";
 #endif
@@ -112,7 +112,7 @@ namespace Goblin {
                 continue;
             }
 
-            std::cerr << "Failed to resolve path for shared object: " << dyn.str + dt_needed << "\n";
+            std::cerr << "Failed to resolve path for shared object: " << dyn.str_table + dt_needed << "\n";
             exit(1);
         }
     }
@@ -163,7 +163,7 @@ namespace Goblin {
     uint32_t Loadable::get_total_page_count(void) const {
         uint32_t total_page_count = 0;
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if (((prog_headers[i].p_type == PT_LOAD) || (prog_headers[i].p_type == PT_TLS)) && prog_headers[i].p_memsz > 0) {
+            if ((prog_headers[i].p_type == PT_LOAD) && prog_headers[i].p_memsz > 0) {
                 total_page_count += get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
             }
         }
@@ -201,10 +201,10 @@ namespace Goblin {
             }
 
             switch(prog_headers[i].p_type) {
-            case PT_TLS:
-                tls_seg_index = i; // save the index of TLS segment
-                std::cout << "TLS segment found\n";
-                __attribute__((fallthrough));
+            // case PT_TLS:
+            //     tls_seg_index = i; // save the index of TLS segment
+            //     std::cout << "TLS segment found\n";
+            //     __attribute__((fallthrough));
             case PT_LOAD:
                 segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr);
                 break;
@@ -231,7 +231,7 @@ namespace Goblin {
 
     void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if (((prog_headers[i].p_type == PT_LOAD) || (prog_headers[i].p_type == PT_TLS)) && (prog_headers[i].p_memsz > 0)) {
+            if ((prog_headers[i].p_type == PT_LOAD) && (prog_headers[i].p_memsz > 0)) {
                 const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
 
                 if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
@@ -246,38 +246,62 @@ namespace Goblin {
     void Loadable::build_shared_objs_tree(void) {
         map_segments();
         if (dyn_seg_index >= 0){
-            {
-                std::set<Elf64_Xword> dt_needed_list;
-                parse_dyn_segment(dt_needed_list);
-                construct_loadeables_for_shared_objects(dt_needed_list); // for each shared object dependency, create a Loadable object
-            }
+            std::set<Elf64_Xword> dt_needed_syms;
+            parse_dyn_segment(dt_needed_syms);
+            construct_loadeables_for_shared_objects(dt_needed_syms); // for each shared object dependency, create a Loadable object
         }
 
-        apply_basic_dyn_relocations(dyn.rela); // applying basic relocations
+        apply_basic_dyn_relocations(dyn.rela_table); // applying basic relocations
         apply_basic_dyn_relocations(plt.rela); // NOTE if not doing lazy binding
+
+        auto construct_name_copy = [](const char* str_table, const Elf64_Word sym_name) {
+            return std::string(str_table + sym_name);
+        };
+        auto construct_name_jumps_globd = [](const char* str_table, const Elf64_Word sym_name) {
+            std::string ret = str_table + sym_name;
+            const size_t pos = ret.find('@');
+            if (pos != std::string::npos) {
+                ret.insert(pos, 1, '@');
+            }
+            return ret;
+        };
+        auto apply_relocation_copy = [](Loadable* self, const std::shared_ptr<Loadable>& dep, const Elf64_Word sym_index, const uint32_t i) {
+            char* src = reinterpret_cast<char*>(self->dyn.sym_table[sym_index].st_value + self->load_base_addr);
+            const char* dst = reinterpret_cast<const char*>(dep->dyn.sym_table[i].st_value + dep->load_base_addr);
+            std::strcpy(src, dst);
+        };
+        auto apply_relocation_jumps_globd = [](Loadable* self, const std::shared_ptr<Loadable>& dep, const Elf64_Word sym_index, const uint32_t i) {
+            Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(self->dyn.rela_table.addr[sym_index].r_offset + self->load_base_addr);
+            *addr = dep->dyn.sym_table[i].st_value + dep->load_base_addr;
+        };
+
+        extern_relas[ExternRelasIndices::REL_COPY].construct_name = construct_name_copy;
+        extern_relas[ExternRelasIndices::REL_COPY].apply_relocation = apply_relocation_copy;
+        extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].construct_name = construct_name_jumps_globd;
+        extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].apply_relocation = apply_relocation_jumps_globd;
 
         for (auto& dep : dependencies) { // for every shared object dependency
             dep->build_shared_objs_tree(); // recursively build the shared objects tree
-            apply_dep_dyn_relocations(dep); // apply the dynamic relocations of the dependency
+            apply_external_dyn_relocations(dep);
         }
 
         set_correct_permissions(); // set the correct permissions for the segments
     }
 
-    void Loadable::apply_dep_dyn_relocations(std::shared_ptr<Loadable> dep) {
-        Elf64_Sym* dep_dyn_sym = dep->dyn.sym + 1; // 1. dont want to change the actual pointer 2. incrementing by one to skip the null
-        do { // for every needed DYN symbols of the dependency
-            std::string dep_sym_name = dep->dyn.str + dep_dyn_sym->st_name;
-            for (auto sym : needed_symbols) { // for every needed DYN symbol
-                std::string org_sym_name = dyn.str + dyn.sym[sym].st_name; // construct the corresponding symbol name to check
-                if (dep_sym_name == org_sym_name) {
-                    char* src = reinterpret_cast<char*>(dyn.sym[sym].st_value + load_base_addr);
-                    const char* dst = reinterpret_cast<const char*>(dep_dyn_sym->st_value + dep->load_base_addr);
-                    strcpy(src, dst);
+    /* for anyone reading this in the future, I'm very sorry for this mess...Hopefully you pull through :) */
+    void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable>& dep) {
+        for (uint32_t i = 1; dep->dyn.sym_table[i].st_info != STT_NOTYPE; i++) { // for every symbol in the shared object
+            std::string dep_sym_name = dep->dyn.str_table + dep->dyn.sym_table[i].st_name;
+            for (auto extern_rela : extern_relas) { // for every set of symbols that need relocation
+                for (auto sym_index : extern_rela.syms) { // for every needed symbol
+                    std::string org_sym_name = extern_rela.construct_name(dyn.str_table, dyn.sym_table[sym_index].st_name);
+                    if (dep_sym_name == org_sym_name) {
+                        extern_rela.apply_relocation(this, dep, sym_index, i);
+                        // extern_rela.syms.erase(sym_index); // remove the symbol from the set since we took care of it
+                    }
                 }
             }
-            dep_dyn_sym += 1;
-        } while (ELF64_ST_TYPE(dep->dyn.sym->st_info) != STT_NOTYPE);
+        }
     }
 
     void Loadable::apply_basic_dyn_relocations(const struct rela_table& rela) {
@@ -287,7 +311,7 @@ namespace Goblin {
 
         for (Elf64_Word i = 0; i < (rela.total_size / rela.entry_size); i++) {
             Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(rela.addr[i].r_offset + load_base_addr);
-            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn.sym + ELF64_R_SYM(rela.addr[i].r_info));
+            Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(dyn.sym_table + ELF64_R_SYM(rela.addr[i].r_info));
             switch (ELF64_R_TYPE(rela.addr[i].r_info)) {
                 case R_X86_64_RELATIVE:
                     *addr = rela.addr[i].r_addend + load_base_addr;
@@ -296,8 +320,7 @@ namespace Goblin {
                     *addr = rela.addr[i].r_addend + sym->st_value + load_base_addr;
                     break;
                 case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
-                    needed_symbols.insert(i);
-                    // *addr = *reinterpret_cast<Elf64_Addr*>(dyn.rela.addr[i].r_addend + load_base_addr);
+                    extern_relas[ExternRelasIndices::REL_COPY].syms.insert(i);
                     break;
                 case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend + load_base_addr as a function and call it. place the return value inside
                     *addr = reinterpret_cast<Elf64_Addr>(
@@ -305,8 +328,7 @@ namespace Goblin {
                     break;
                 case R_X86_64_JUMP_SLOT:
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
-                    *addr = sym->st_value;
-                    std::cout << "offset: " << std::hex << rela.addr[i].r_offset << " sym val: " << sym->st_value << "\n";
+                    extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].syms.insert(i);
                     break;
                 case R_X86_64_DTPMOD64:
                 case R_X86_64_DTPOFF64:
@@ -325,8 +347,3 @@ namespace Goblin {
         }
     }
 }
-
-/*
-
-
-*/

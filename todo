@@ -1,3 +1,6 @@
 - implement GNU_RELRO support
 - implement ld.so cache support
 - lazy binding support
+- implement user setting their own entry point
+- symbol versioning
+- LD_PRELOAD
