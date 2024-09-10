@@ -59,9 +59,6 @@ namespace Goblin {
         inline static uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
         uint32_t get_total_page_count(void) const;
 
-        // void apply_relocation_copy(const std::shared_ptr<Loadable>& dep);
-        // void apply_relocation_jumps_globd(const std::shared_ptr<Loadable>& dep);
-
     protected:
         int16_t dyn_seg_index;
         Elf64_Addr load_base_addr;

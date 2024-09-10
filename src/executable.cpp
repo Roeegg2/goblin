@@ -13,7 +13,7 @@ namespace Goblin {
 
     Executable::~Executable(void) { }
 
-    void Executable::run(void) { // elf_header.e_entry 0x401655
+    void Executable::run(void) {
         build_shared_objs_tree();
 
 #ifdef DEBUG
@@ -26,6 +26,7 @@ namespace Goblin {
 #endif
         munmap(segment_data[dyn_seg_index], prog_headers[dyn_seg_index].p_memsz); // Goblin finished doing its magic, so there is no need for the dynamic segment anymore
         void (*start_execution)(void) = reinterpret_cast<void(*)()>(elf_header.e_entry + load_base_addr);
+        // void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x1139 + load_base_addr);
         start_execution();
     }
 }

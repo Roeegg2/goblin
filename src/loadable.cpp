@@ -172,20 +172,15 @@ namespace Goblin {
     }
 
     void Loadable::alloc_mem_for_segments(void) {
-        load_base_addr = prog_headers[0].p_vaddr;
+        load_base_addr = prog_headers[0].p_vaddr; // 0 for PIE, actual base address for non-PIE. that way mmap will allocate memory at the correct address (0 means kernel will choose the address for us)
 
         uint32_t total_page_count = get_total_page_count();
         load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void*>(load_base_addr),
             total_page_count * PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
         if (reinterpret_cast<void*>(load_base_addr) == MAP_FAILED) {
-            if (errno == EADDRINUSE) {
-
-            }
-            else {
-                std::cerr << "mmap failed\n";
-                exit(1);
-            }
+            std::cerr << "mmap failed\n";
+            exit(1);
         }
 
         if (elf_header.e_type == ET_EXEC)
@@ -201,25 +196,21 @@ namespace Goblin {
             }
 
             switch(prog_headers[i].p_type) {
-            // case PT_TLS:
-            //     tls_seg_index = i; // save the index of TLS segment
-            //     std::cout << "TLS segment found\n";
-            //     __attribute__((fallthrough));
-            case PT_LOAD:
-                segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr);
-                break;
             case PT_DYNAMIC:
-                dyn_seg_index = i; // save the index of the dynamic segment
-                segment_data[i] = mmap(NULL, // allocate mem (we allocate independently of the PT_LOAD and PT_TLS segments, since we don't care about the address it is mapped in - we just need the data)
-                    get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr) * PAGE_SIZE,
-                    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,-1, 0);
+                dyn_seg_index = i;
+                __attribute__((fallthrough));
+            case PT_GNU_RELRO:
+                __attribute__((fallthrough));
+            case PT_LOAD:
                 break;
-            default:
+            default: // nothing to do, so go next
                 continue;
             }
 
+            segment_data[i] = reinterpret_cast<void*>(prog_headers[i].p_vaddr + load_base_addr); // mmap assigns only page aligned addresses, and we need to know the exact address
+
             elf_file.seekg(prog_headers[i].p_offset);
-            elf_file.read(reinterpret_cast<char*>(segment_data[i]), prog_headers[i].p_filesz);
+            elf_file.read(reinterpret_cast<char*>(segment_data[i]), prog_headers[i].p_filesz); // read data from file to memory
 
             // As specified in the System V ABI, all data not mapped from file should be zeroed out
             if (prog_headers[i].p_filesz < prog_headers[i].p_memsz) {
@@ -231,13 +222,15 @@ namespace Goblin {
 
     void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < elf_header.e_phnum; i++) {
-            if ((prog_headers[i].p_type == PT_LOAD) && (prog_headers[i].p_memsz > 0)) {
-                const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
+            if (((prog_headers[i].p_type == PT_LOAD) && (prog_headers[i].p_memsz > 0)) || (prog_headers[i].p_type == PT_GNU_RELRO)) {
+                if (prog_headers[i].p_memsz > 0) {
+                    const uint16_t page_count = get_page_count(prog_headers[i].p_memsz, prog_headers[i].p_vaddr);
 
-                if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
-                    page_count * PAGE_SIZE, elf_perm_to_mmap_perms(prog_headers[i].p_flags)) == -1) {
-                    std::cerr << "mprotect failed\n";
-                    exit(1);
+                    if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(segment_data[i]))),
+                        page_count * PAGE_SIZE, elf_perm_to_mmap_perms(prog_headers[i].p_flags)) == -1) {
+                            std::cerr << "mprotect failed\n";
+                            exit(1);
+                    }
                 }
             }
         }
@@ -297,7 +290,7 @@ namespace Goblin {
                     std::string org_sym_name = extern_rela.construct_name(dyn.str_table, dyn.sym_table[sym_index].st_name);
                     if (dep_sym_name == org_sym_name) {
                         extern_rela.apply_relocation(this, dep, sym_index, i);
-                        // extern_rela.syms.erase(sym_index); // remove the symbol from the set since we took care of it
+                        // FIXME: extern_rela.syms.erase(sym_index);
                     }
                 }
             }
@@ -347,3 +340,13 @@ namespace Goblin {
         }
     }
 }
+/*
+    get indices of sections (symtab, strtab, gnu.hash, .hash)
+    if (there is a gnu.hash)
+        use gnu.hash
+    else if (there is a .hash)
+        use .hash
+    else
+        use symtab
+
+*/
