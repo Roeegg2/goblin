@@ -1,7 +1,7 @@
 # in `elk/samples/chimera/Makefile`
 
 CFLAGS  := -fPIC
-LDFLAGS := -nostartfiles -nodefaultlibs -L. -Wl,-rpath='$$ORIGIN'
+LDFLAGS := -nostartfiles -nodefaultlibs -L. -Wl,-m_rpath='$$ORIGIN'
 
 all: chimera
 

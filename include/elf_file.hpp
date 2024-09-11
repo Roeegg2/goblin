@@ -39,12 +39,12 @@ namespace Goblin {
         void read_elf_header_data(void* data, const uint8_t bytes, const int32_t offset = -1);
 
     protected:
-        std::filesystem::path elf_file_path;
-        std::ifstream elf_file;
+        std::filesystem::path m_elf_file_path;
+        std::ifstream m_elf_file;
 
-        Elf64_Ehdr elf_header;
-        Elf64_Phdr* prog_headers;
-        Elf64_Shdr* sect_headers;
+        Elf64_Ehdr m_elf_header;
+        Elf64_Phdr* m_prog_headers;
+        Elf64_Shdr* m_sect_headers;
     };
 }
 

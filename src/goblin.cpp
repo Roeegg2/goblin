@@ -3,7 +3,7 @@
 using namespace Goblin;
 
 int main() {
-    Executable* executable = new Executable("tests/hello-dl");
+    Executable* executable = new Executable("tests/libctest");
 
 #ifdef DEBUG
     executable->full_print();
