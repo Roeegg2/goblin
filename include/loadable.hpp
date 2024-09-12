@@ -26,7 +26,18 @@ namespace Goblin {
         void (*f_apply_relocation)(Loadable* self, const std::shared_ptr<Loadable>& dep, const Elf64_Word sym_index, const uint32_t i);
         std::set<Elf64_Word> m_syms;
     };
+	
+	struct tls_img {
+		Elf64_Xword m_size;
+		void* m_data;
+		Elf64_Off m_tlsoffset;
+		bool m_is_static_model;
+	};
 
+	struct tls {
+		std::vector<struct tls_img> m_init_imgs;
+		Elf64_Off m_total_imgs_size;
+	};
     // would've used enum class but it's not possible to use it as an index in an array...
     enum ExternRelasIndices : uint8_t {
         REL_COPY = 0,
@@ -46,9 +57,11 @@ namespace Goblin {
     protected:
         void parse_dyn_segment(std::set<Elf64_Xword>& m_dt_needed_syms);
         void construct_loadeables_for_shared_objects(const std::set<Elf64_Xword>& m_dt_needed_syms);
+
         bool resolve_path_rpath_runpath(const char* r_run_path, std::string& path, const char* shared_obj_name) const;
-        bool resolve_path_ld_library_path(std::string& path, const char* shared_obj_name);
-        bool resolve_path_default(std::string& path, const char* shared_obj_name) const;
+        static bool resolve_path_ld_library_path(std::string& path, const char* shared_obj_name);
+        static bool resolve_path_default(std::string& path, const char* shared_obj_name);
+
         void alloc_mem_for_segments(void);
         void map_segments(void);
         void set_correct_permissions(void);
@@ -61,11 +74,12 @@ namespace Goblin {
 
     protected:
         int16_t m_dyn_seg_index;
+        int16_t m_tls_seg_index;
         Elf64_Addr m_load_base_addr;
         std::vector<void*> m_segment_data;
+		static struct tls s_tls;
 
     private:
-        int16_t m_tls_seg_index;
         char* m_rpath;
         char* m_runpath;
         struct {

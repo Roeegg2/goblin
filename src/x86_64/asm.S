@@ -1,14 +1,17 @@
-section .note.GNU-stack noalloc noexec nowrite progbits
+.section .note.GNU-stack,"",@progbits
 
-section .text
-global _my_dl_addr
-global _my_exit
+.section .text
+.globl _goblin_tls_init_tp
+.globl _goblin_tls_get_tp
 
-_my_dl_addr:
-    xor rax, rax
-    ret
+# rdi - receives TP (pointer to the TLS block)
+_goblin_tls_init_tp:
+	push %rbp
+	mov %rsp, %rbp
+	# systemd 64 ABI says first argument goes into %rdi
+	mov %rdi, %fs
+	ret
 
-_my_exit:
-    xor rdi, rdi
-    mov rax, 60
-    syscall
+_goblin_tls_get_tp:
+	mov %fs, %rax
+	ret

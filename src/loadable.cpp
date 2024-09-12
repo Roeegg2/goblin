@@ -24,6 +24,8 @@ namespace Goblin {
         "/lib64/",
         "/usr/lib64/",
     };
+	
+	struct tls Loadable::s_tls;
 
     Loadable::Loadable(const std::string file_path)
         : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1),
@@ -34,11 +36,11 @@ namespace Goblin {
     }
 
     Loadable::~Loadable(void){
-        for (int i = 0; i < m_elf_header.e_phnum; i++) { // unmap all segments
-            if (m_segment_data[i] != nullptr) {
-                munmap(m_segment_data[i], m_prog_headers[i].p_memsz);
-            }
-        }
+        /*for (int i = 0; i < m_elf_header.e_phnum; i++) { // unmap all segments*/
+        /*    if (m_segment_data[i] != nullptr) {*/
+        /*        munmap(m_segment_data[i], m_prog_headers[i].p_memsz);*/
+        /*    }*/
+        /*}*/
     }
 
     bool find_file(const std::filesystem::path& directory, const std::string& filename, std::string& found_path) {
@@ -136,7 +138,7 @@ namespace Goblin {
         return find_file(ld_library_path, shared_obj_name, path);
     }
 
-    bool Loadable::resolve_path_default(std::string& path, const char* shared_obj_name) const {
+    bool Loadable::resolve_path_default(std::string& path, const char* shared_obj_name) {
         for (const char* default_dir : s_DEFAULT_SHARED_OBJ_PATHS) {
             if (find_file(default_dir, shared_obj_name, path)) {
                 return true;
@@ -196,11 +198,20 @@ namespace Goblin {
             }
 
             switch(m_prog_headers[i].p_type) {
+			case PT_TLS:
+				m_tls_seg_index = i;
+				s_tls.m_init_imgs.push_back({
+						.m_size = m_prog_headers[i].p_memsz, 
+						.m_data = m_segment_data[i],
+						.m_tlsoffset = s_tls.m_total_imgs_size,
+						.m_is_static_model = true});
+				s_tls.m_total_imgs_size += m_prog_headers[i].p_memsz;
+				break;
             case PT_DYNAMIC:
                 m_dyn_seg_index = i;
-                __attribute__((fallthrough));
-            case PT_GNU_RELRO:
-                __attribute__((fallthrough));
+            	break;
+			case PT_GNU_RELRO:
+				break;
             case PT_LOAD:
                 break;
             default: // nothing to do, so go next
@@ -222,14 +233,15 @@ namespace Goblin {
 
     void Loadable::set_correct_permissions(void) {
         for (int8_t i = 0; i < m_elf_header.e_phnum; i++) {
-            if (((m_prog_headers[i].p_type == PT_LOAD) && (m_prog_headers[i].p_memsz > 0)) || (m_prog_headers[i].p_type == PT_GNU_RELRO)) {
+            if (((m_prog_headers[i].p_type == PT_LOAD) && (m_prog_headers[i].p_memsz > 0)) 
+					|| (m_prog_headers[i].p_type == PT_GNU_RELRO) || (m_prog_headers[i].p_type == PT_TLS)) {
                 if (m_prog_headers[i].p_memsz > 0) {
                     const uint16_t page_count = get_page_count(m_prog_headers[i].p_memsz, m_prog_headers[i].p_vaddr);
 
                     if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(m_segment_data[i]))),
                         page_count * PAGE_SIZE, elf_perm_to_mmap_perms(m_prog_headers[i].p_flags)) == -1) {
-                            std::cerr << "mprotect failed\n";
-                            exit(1);
+                        std::cerr << "mprotect failed\n";
+                        exit(1);
                     }
                 }
             }
@@ -323,14 +335,6 @@ namespace Goblin {
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
                     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(i);
                     break;
-                case R_X86_64_DTPMOD64:
-                case R_X86_64_DTPOFF64:
-                case R_X86_64_TPOFF64:
-                case R_X86_64_TLSGD:
-                case R_X86_64_TLSLD:
-                case R_X86_64_DTPOFF32:
-                case R_X86_64_GOTTPOFF:
-                case R_X86_64_TPOFF32:
                 case R_X86_64_TLSDESC_CALL:
                     break;
                 default:
