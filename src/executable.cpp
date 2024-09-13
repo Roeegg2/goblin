@@ -20,16 +20,29 @@ namespace Goblin {
         : Loadable(file_path, 1) { }
 
     Executable::~Executable(void) {}
-
     void* Executable::__tls_get_addr(tls_index* ti) {
-	    void* tp = _goblin_tls_get_tp();
-	    void* tls_block = dtvs[reinterpret_cast<struct tcb*>(tp)->tid][ti->ti_module];
+	    const tid_t tid = reinterpret_cast<struct tcb*>(_goblin_tls_get_tp())->tid;
+		if (ti->ti_module > dtvs[tid].size()) { // first case no block is allocated - when module id is greater than the number of tls blocks allocated
+			goto allocate_new;
+		}
+	
+		{
+			void* tls_block = dtvs[tid][ti->ti_module-1]; // we start couting modules from 1
+	    	if (tls_block == nullptr) { // second case no block is allocated - when it was used before, but the module it belonged to was unloaded
+				goto allocate_new;
+		 	/*not handling this yet... we will worry about dlopen loaded modules later.. :)*/
+	    	}
+	    	return reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tls_block) + ti->ti_offset); 
+		}
 
-	    if (tls_block == nullptr) {
-		/*not handling this yet... we will worry about dlopen loaded modules later.. :)*/
-	    }
 
-	    return reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tls_block) + ti->ti_offset); 
+	allocate_new:
+		dtvs[tid].resize(ti->ti_module);
+		dtvs[tid][ti->ti_module-1] = mmap(nullptr, s_tls.m_total_imgs_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		
+		std::memcpy(dtvs[tid][ti->ti_module-1], s_tls.m_init_imgs[ti->ti_module-1].m_data, s_tls.m_init_imgs[ti->ti_module-1].m_size);
+		
+		return reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(dtvs[tid][ti->ti_module-1]) + ti->ti_offset);
     }
 
     /*code here might cause some confusion. TP here (thread pointer) is point on its right to the TCB, and on the left to the TLS blocks. so in the code its used sometimes for this and sometimes for that*/
