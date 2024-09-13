@@ -27,8 +27,8 @@ namespace Goblin {
 	
 	struct tls Loadable::s_tls;
 
-    Loadable::Loadable(const std::string file_path)
-        : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1),
+    Loadable::Loadable(const std::string file_path, const Elf64_Word module_id)
+        : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_module_id(module_id),
         m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
 
         full_parse();
@@ -108,9 +108,9 @@ namespace Goblin {
                 resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) ||
                 resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 #ifdef INFO
-                std::cout << "Loading shared object \"" << path << "\"\n";
+                std::cout << "Loading shared object \"" << path << "\" and assigning module ID" << m_module_id + 1 << " \n";
 #endif
-                m_dependencies.insert(std::make_shared<Loadable>(path.c_str()));
+                m_dependencies.insert(std::make_shared<Loadable>(path.c_str(), m_module_id + 1));
                 continue;
             }
 
@@ -201,6 +201,7 @@ namespace Goblin {
 			case PT_TLS:
 				m_tls_seg_index = i;
 				s_tls.m_init_imgs.push_back({
+						.m_module_id = m_module_id, // FIXME: might need to change this if there are cases where the module ID is decided upon at compile/linktime
 						.m_size = m_prog_headers[i].p_memsz, 
 						.m_data = m_segment_data[i],
 						.m_tlsoffset = s_tls.m_total_imgs_size,
@@ -289,6 +290,7 @@ namespace Goblin {
             dep->build_shared_objs_tree(); // recursively build the shared objects tree
             apply_external_dyn_relocations(dep);
         }
+		apply_tls_relocations();
 
         set_correct_permissions(); // set the correct permissions for the segments
     }
@@ -308,6 +310,24 @@ namespace Goblin {
             }
         }
     }
+
+	void Loadable::apply_tls_relocations(void) {
+		for (auto i : m_tls_relas) {
+			Elf64_Addr* addr = reinterpret_cast<Elf64_Addr*>(m_dyn.rela_table.m_addr[i].r_offset + m_load_base_addr);
+			Elf64_Sym* sym = reinterpret_cast<Elf64_Sym*>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela_table.m_addr[i].r_info));
+			switch (ELF64_R_TYPE(m_dyn.rela_table.m_addr[i].r_info)) {
+				case R_X86_64_DTPOFF64:
+					*addr = sym->st_value + m_load_base_addr;
+					break;
+				case R_X86_64_DTPMOD64:
+					*addr = m_module_id;
+					break;
+				default: /*case of R_X86_64_TPOFF64*/
+					*addr = sym->st_value;
+					break;
+			}
+		}
+	}
 
     void Loadable::apply_basic_dyn_relocations(const struct rela_table& rela) {
         if (rela.m_addr == nullptr){
@@ -335,9 +355,12 @@ namespace Goblin {
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
                     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(i);
                     break;
-                case R_X86_64_TLSDESC_CALL:
-                    break;
-                default:
+				case R_X86_64_DTPOFF64:
+				case R_X86_64_DTPMOD64:
+				case R_X86_64_TPOFF64: // 
+					m_tls_relas.insert(i);
+					break;
+				default:
                     std::cerr << "Unknown relocation type: " << std::dec << ELF64_R_TYPE(rela.m_addr[i].r_info) << "\n";
                     exit(1);
             }

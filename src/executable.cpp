@@ -17,7 +17,7 @@ extern "C" {
 
 namespace Goblin {
     Executable::Executable(const std::string file_path)
-        : Loadable(file_path) { }
+        : Loadable(file_path, 1) { }
 
     Executable::~Executable(void) {}
 
@@ -34,29 +34,29 @@ namespace Goblin {
 
     /*code here might cause some confusion. TP here (thread pointer) is point on its right to the TCB, and on the left to the TLS blocks. so in the code its used sometimes for this and sometimes for that*/
     void Executable::init_thread_static_tls() {
-	void* tp = mmap(nullptr, s_tls.m_total_imgs_size + sizeof(struct tcb), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); // allocate memory for the tls blocks and tcb, as specified in variant 2
-	tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) + s_tls.m_total_imgs_size); // we want to point to the end of the tls blocks, and start of the tcb
-	GI(tls_init_tp)(tp); // set %fs register to point to the TCB
+		void* tp = mmap(nullptr, s_tls.m_total_imgs_size + sizeof(struct tcb), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0); // allocate memory for the tls blocks and tcb, as specified in variant 2
+		tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) + s_tls.m_total_imgs_size); // we want to point to the end of the tls blocks, and start of the tcb
+		GI(tls_init_tp)(tp); // set %fs register to point to the TCB
     	
-	/*FIXME: improve this mechanism*/
-	struct tcb* ctp = reinterpret_cast<struct tcb*>(tp);
-	ctp->tp = tp;
-	if (m_free_tids.empty()) { // if there are no free tids, increase the size of the tcb vector
-		ctp->tid = m_tcbs.size();
-		dtvs.resize(ctp->tid + 1);
-	} else { // if there are free tids, just repurpose one
-		ctp->tid = m_free_tids.front();
-		m_free_tids.pop();
-	}
-
-	tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) - s_tls.m_total_imgs_size); // point to the start of the tls block images again
-	for (auto& img : s_tls.m_init_imgs) { // for each TLS block image
-		if (img.m_is_static_model) { // if the TLS block is using static model
-			std::memcpy(tp, img.m_data, img.m_size); // copy the TLS block image to the TLS block
-			dtvs[ctp->tid].push_back(tp); // NOTE: we initlized the m_init_imgs vector the same order we would've assigned module ids so we can just push_back and not have to worry about the location
-			tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) + img.m_size);
+		/*FIXME: improve this mechanism*/
+		struct tcb* ctp = reinterpret_cast<struct tcb*>(tp);
+		ctp->tp = tp;
+		if (m_free_tids.empty()) { // if there are no free tids, increase the size of the tcb vector
+			ctp->tid = m_tcbs.size();
+			dtvs.resize(ctp->tid + 1);
+		} else { // if there are free tids, just repurpose one
+			ctp->tid = m_free_tids.front();
+			m_free_tids.pop();
 		}
-	}
+
+		tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) - s_tls.m_total_imgs_size); // point to the start of the tls block images again
+		for (auto& img : s_tls.m_init_imgs) { // for each TLS block image
+			if (img.m_is_static_model) { // if the TLS block is using static model
+				std::memcpy(tp, img.m_data, img.m_size); // copy the TLS block image to the TLS block
+				dtvs[ctp->tid].push_back(tp); // NOTE: we initlized the m_init_imgs vector the same order we would've assigned module ids so we can just push_back and not have to worry about the order 
+				tp = reinterpret_cast<void*>(reinterpret_cast<Elf64_Addr>(tp) + img.m_size);
+			}
+		}
     }
 
     void Executable::run(void) {

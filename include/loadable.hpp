@@ -28,6 +28,7 @@ namespace Goblin {
     };
 	
 	struct tls_img {
+		Elf64_Word m_module_id; 
 		Elf64_Xword m_size;
 		void* m_data;
 		Elf64_Off m_tlsoffset;
@@ -46,7 +47,7 @@ namespace Goblin {
 
     class Loadable : public ELF_File {
     public:
-        Loadable(const std::string file_path);
+        Loadable(const std::string file_path, const Elf64_Word module_id);
         ~Loadable();
 #ifdef DEBUG
         void print_dynamic_segment(void) const;
@@ -67,6 +68,7 @@ namespace Goblin {
         void set_correct_permissions(void);
         void apply_external_dyn_relocations(const std::shared_ptr<Loadable>& dep);
         void apply_basic_dyn_relocations(const struct rela_table& rela);
+		void apply_tls_relocations(void); 
 
         static int elf_perm_to_mmap_perms(const uint32_t elf_flags);
         inline static uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
@@ -80,6 +82,7 @@ namespace Goblin {
 		static struct tls s_tls;
 
     private:
+		Elf64_Word m_module_id;
         char* m_rpath;
         char* m_runpath;
         struct {
@@ -93,10 +96,10 @@ namespace Goblin {
             Elf64_Addr* got;
         } m_plt;
 
+        std::set<std::shared_ptr<Loadable>> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
         std::array<struct extern_rela, 2> m_extern_relas; // indices of symbols that are needed from the external libraries
         std::set<Elf64_Xword> m_dt_needed_syms; // list of DT_NEEDED entries - list of SOs we need to load
-        std::set<std::shared_ptr<Loadable>> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
-        static std::set<std::shared_ptr<Loadable>> s_global_dependencies; // list of all object's m_dependencies
+		std::set<Elf64_Word> m_tls_relas; // indices of symbols that are needed for TLS relocations
 
         static const char* s_DEFAULT_SHARED_OBJ_PATHS[];
     };

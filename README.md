@@ -15,3 +15,6 @@ Features:
 - [ ] ELF hash
 - [ ] GNU hash
 - [ ] symbol versioning
+- [x] static TLS support
+- [x] dynamic TLS support
+- [ ] dlopen() support
