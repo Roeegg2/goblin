@@ -4,10 +4,6 @@
 #include <iostream>
 #include <cstring>
 
-#define MAP_SEGMENT_DATA(sect_data, sect_index) \
-    mmap_wrapper(reinterpret_cast<void**>(&sect_data), 0x0, sect_headers[sect_index].sh_size, PROT_READ, \
-        MAP_PRIVATE, elf_file_fd, PAGE_ALIGN_DOWN(sect_headers[sect_index].sh_offset));
-
 namespace Goblin {
     ELF_File::ELF_File(const std::string file_path) : m_elf_file_path(file_path){
         m_elf_file.open(file_path, std::ios::binary);

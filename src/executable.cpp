@@ -16,8 +16,8 @@ extern "C" {
 }
 
 namespace Goblin {
-    Executable::Executable(const std::string file_path)
-        : Loadable(file_path, 1) { }
+    Executable::Executable(const std::string file_path, const options_t options)
+        : Loadable(file_path, 1, options) { }
 
     Executable::~Executable(void) {}
     void* Executable::__tls_get_addr(tls_index* ti) {
@@ -81,11 +81,11 @@ namespace Goblin {
         }
 #endif
 #ifdef INFO
-        std::cout << "\nStarting execution...\n";
+        std::cout << "\nStarting execution..." << std::endl;
 #endif
         munmap(m_segment_data[m_dyn_seg_index], m_prog_headers[m_dyn_seg_index].p_memsz); // Goblin finished doing its magic, so there is no need for the dynamic segment anymore
         void (*start_execution)(void) = reinterpret_cast<void(*)()>(m_elf_header.e_entry + m_load_base_addr);
-        // void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x1139 + m_load_base_addr);
+        /*void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x1139 + m_load_base_addr);*/
         start_execution();
     }
-}
+};

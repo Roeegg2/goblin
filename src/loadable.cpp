@@ -1,4 +1,5 @@
 #include "../include/loadable.hpp"
+#include "../include/utils.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -13,8 +14,6 @@
 
 extern "C" {
     char** environ;
-    extern void _my_dl_open(void);
-    extern void _my_exit();
 };
 
 namespace Goblin {
@@ -27,8 +26,8 @@ namespace Goblin {
 	
 	struct tls Loadable::s_tls;
 
-    Loadable::Loadable(const std::string file_path, const Elf64_Word module_id)
-        : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_module_id(module_id),
+    Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, const options_t options)
+        : ELF_File(file_path), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_module_id(module_id),
         m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
 
         full_parse();
@@ -41,16 +40,6 @@ namespace Goblin {
         /*        munmap(m_segment_data[i], m_prog_headers[i].p_memsz);*/
         /*    }*/
         /*}*/
-    }
-
-    bool find_file(const std::filesystem::path& directory, const std::string& filename, std::string& found_path) {
-        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
-            if (entry.is_regular_file() && entry.path().filename() == filename) {
-                found_path = entry.path().string();
-                return true;
-            }
-        }
-        return false;
     }
 
     void Loadable::parse_dyn_segment(std::set<Elf64_Xword>& m_dt_needed_syms) {
@@ -110,7 +99,7 @@ namespace Goblin {
 #ifdef INFO
                 std::cout << "Loading shared object \"" << path << "\" and assigning module ID" << m_module_id + 1 << " \n";
 #endif
-                m_dependencies.insert(std::make_shared<Loadable>(path.c_str(), m_module_id + 1));
+                m_dependencies.insert(std::make_shared<Loadable>(path.c_str(), m_module_id + 1, m_options));
                 continue;
             }
 
@@ -146,10 +135,6 @@ namespace Goblin {
         }
 
         return false;
-    }
-
-    inline uint32_t Loadable::get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
-        return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
     }
 
     int Loadable::elf_perm_to_mmap_perms(const uint32_t elf_flags) {
@@ -239,7 +224,7 @@ namespace Goblin {
                 if (m_prog_headers[i].p_memsz > 0) {
                     const uint16_t page_count = get_page_count(m_prog_headers[i].p_memsz, m_prog_headers[i].p_vaddr);
 
-                    if (mprotect(reinterpret_cast<void*>(PAGE_ALIGN_DOWN(reinterpret_cast<Elf64_Addr>(m_segment_data[i]))),
+                    if (mprotect(reinterpret_cast<void*>(page_align_down(reinterpret_cast<Elf64_Addr>(m_segment_data[i]))),
                         page_count * PAGE_SIZE, elf_perm_to_mmap_perms(m_prog_headers[i].p_flags)) == -1) {
                         std::cerr << "mprotect failed\n";
                         exit(1);
@@ -249,17 +234,7 @@ namespace Goblin {
         }
     }
 
-    void Loadable::build_shared_objs_tree(void) {
-        map_segments();
-        if (m_dyn_seg_index >= 0){
-            std::set<Elf64_Xword> m_dt_needed_syms;
-            parse_dyn_segment(m_dt_needed_syms);
-            construct_loadeables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a Loadable object
-        }
-
-        apply_basic_dyn_relocations(m_dyn.rela_table); // applying basic relocations
-        apply_basic_dyn_relocations(m_plt.rela); // NOTE if not doing lazy binding
-
+	void Loadable::init_extern_relas(void) {
         auto construct_name_copy = [](const char* str_table, const Elf64_Word sym_name) {
             return std::string(str_table + sym_name);
         };
@@ -285,7 +260,24 @@ namespace Goblin {
         m_extern_relas[ExternRelasIndices::REL_COPY].f_apply_relocation = apply_relocation_copy;
         m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_construct_name = construct_name_jumps_globd;
         m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_apply_relocation = apply_relocation_jumps_globd;
+	}
 
+    void Loadable::build_shared_objs_tree(void) {
+        map_segments();
+        if (m_dyn_seg_index >= 0){
+            std::set<Elf64_Xword> m_dt_needed_syms;
+            parse_dyn_segment(m_dt_needed_syms);
+            construct_loadeables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a Loadable object
+        }
+
+        apply_basic_dyn_relocations(m_dyn.rela_table); // applying basic relocations
+		/*if (__builtin_expect(m_options.binding == BINDING_EAGER, 0)) { // if eager binding is enabled */
+        	apply_basic_dyn_relocations(m_plt.rela); 
+		/*} else {*/
+			/*setup_lazy_binding();*/
+		/*}*/
+
+		init_extern_relas();
         for (auto& dep : m_dependencies) { // for every shared object dependency
             dep->build_shared_objs_tree(); // recursively build the shared objects tree
             apply_external_dyn_relocations(dep);
@@ -323,7 +315,7 @@ namespace Goblin {
 					*addr = m_module_id;
 					break;
 				default: /*case of R_X86_64_TPOFF64*/
-					*addr = sym->st_value;
+					*addr = sym->st_value + m_dyn.rela_table.m_addr[i].r_addend + m_load_base_addr;
 					break;
 			}
 		}
@@ -348,8 +340,7 @@ namespace Goblin {
                     m_extern_relas[ExternRelasIndices::REL_COPY].m_syms.insert(i);
                     break;
                 case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend + m_load_base_addr as a function and call it. place the return value inside
-                    *addr = reinterpret_cast<Elf64_Addr>(
-                        reinterpret_cast<Elf64_Addr (*)()>(rela.m_addr[i].r_addend + m_load_base_addr)());
+                    *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr (*)()>(rela.m_addr[i].r_addend + m_load_base_addr)());
                     break;
                 case R_X86_64_JUMP_SLOT:
                 case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
@@ -366,7 +357,7 @@ namespace Goblin {
             }
         }
     }
-}
+};
 /*
     get indices of sections (symtab, strtab, gnu.hash, .hash)
     if (there is a gnu.hash)

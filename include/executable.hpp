@@ -1,5 +1,5 @@
-#ifndef LOADER_HPP
-#define LOADER_HPP
+#ifndef GOBLIN_EXECUTABLE_HPP
+#define GOBLIN_EXECUTABLE_HPP
 
 #include "loadable.hpp"
 
@@ -9,22 +9,22 @@
 namespace Goblin {
 	typedef Elf64_Word tid_t;
 
-	struct tcb {
-		void* tp; // thread pointer (%fs register)
-		tid_t tid; // thread id
-	};
-	
 	typedef struct {
 		unsigned long int ti_module;
 		unsigned long int ti_offset;
 	} tls_index;
+
+	struct tcb {
+		void* tp; // thread pointer (%fs register)
+		tid_t tid; // thread id
+	};
 
     class Executable final : public Loadable{
 	private:
 		void init_thread_static_tls(void);
 	
 	public:
-        Executable(const std::string file_path);
+        Executable(const std::string file_path, const options_t options);
         ~Executable(void);
         void run(void);
 	
@@ -34,6 +34,6 @@ namespace Goblin {
     	std::vector<std::vector<void*>> dtvs;
 		std::queue<tid_t> m_free_tids; // free thread ids
 	};
-}
+};
 
 #endif

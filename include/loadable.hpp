@@ -1,5 +1,5 @@
-#ifndef RUNNER_HPP
-#define RUNNER_HPP
+#ifndef GOBLIN_LOADABLE_HPP
+#define GOBLIN_LOADABLE_HPP
 
 #include "elf_file.hpp"
 
@@ -9,10 +9,20 @@
 #include <vector>
 #include <array>
 
-#define PAGE_ALIGN_DOWN(addr) ((addr) & ~(PAGE_SIZE-1))
-
 namespace Goblin {
-    constexpr uint16_t PAGE_SIZE = 0x1000;
+inline constexpr const auto BINDING_EAGER = 0b0;
+inline constexpr const auto BINDING_LAZY = 0b1;
+inline constexpr const auto BINDING_OPTIMAL = BINDING_LAZY;
+inline constexpr const auto SYMBOL_RESOLUTION_ELF_HASH = 0b00;
+inline constexpr const auto SYMBOL_RESOLUTION_GNU_HASH = 0b01;
+inline constexpr const auto SYMBOL_RESOLUTION_SYMTAB = 0b10;
+inline constexpr const auto SYMBOL_RESOLUTION_OPTIMAL = 0b11;
+
+	typedef struct {
+		uint64_t binding : 1;
+		uint64_t symbol_resolution : 2;
+	} options_t;
+
     class Loadable;
 
     struct rela_table {
@@ -47,7 +57,7 @@ namespace Goblin {
 
     class Loadable : public ELF_File {
     public:
-        Loadable(const std::string file_path, const Elf64_Word module_id);
+        Loadable(const std::string file_path, const Elf64_Word module_id, const options_t options);
         ~Loadable();
 #ifdef DEBUG
         void print_dynamic_segment(void) const;
@@ -69,12 +79,13 @@ namespace Goblin {
         void apply_external_dyn_relocations(const std::shared_ptr<Loadable>& dep);
         void apply_basic_dyn_relocations(const struct rela_table& rela);
 		void apply_tls_relocations(void); 
+		void init_extern_relas(void);
 
         static int elf_perm_to_mmap_perms(const uint32_t elf_flags);
-        inline static uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
         uint32_t get_total_page_count(void) const;
 
-    protected:
+	protected:
+		options_t m_options;
         int16_t m_dyn_seg_index;
         int16_t m_tls_seg_index;
         Elf64_Addr m_load_base_addr;
@@ -103,6 +114,6 @@ namespace Goblin {
 
         static const char* s_DEFAULT_SHARED_OBJ_PATHS[];
     };
-}
+};
 
 #endif

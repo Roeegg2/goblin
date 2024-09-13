@@ -1,5 +1,5 @@
-#ifndef PARSER_HPP
-#define PARSER_HPP
+#ifndef GOBLIN_ELF_FILE_HPP
+#define GOBLIN_ELF_FILE_HPP
 
 #include <elf.h>
 #include <fstream>
@@ -46,6 +46,6 @@ namespace Goblin {
         Elf64_Phdr* m_prog_headers;
         Elf64_Shdr* m_sect_headers;
     };
-}
+};
 
 #endif
