@@ -13,5 +13,7 @@ _goblin_tls_init_tp:
 	ret
 
 _goblin_tls_get_tp:
+	push %rbp
+	mov %rsp, %rbp
 	mov %fs, %rax
 	ret

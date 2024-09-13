@@ -13,10 +13,10 @@ if &shortmess =~ 'A'
 else
   set shortmess=aoO
 endif
-badd +38 ~/Projects/goblin/src/executable.cpp
+badd +31 ~/Projects/goblin/src/executable.cpp
 badd +71 ~/Projects/goblin/include/loadable.hpp
 badd +22 ~/Projects/goblin/include/executable.hpp
-badd +322 ~/Projects/goblin/src/loadable.cpp
+badd +306 ~/Projects/goblin/src/loadable.cpp
 badd +1 ~/Projects/goblin/terminal
 badd +160 term://~/Projects/goblin//21293:/bin/bash
 badd +1 ~/Projects/goblin/src/loadable.hpp
@@ -30,22 +30,18 @@ badd +1 ~/Projects/goblin/tests/tlstest.c
 badd +1 ~/Projects/goblin/tests/tlstest.S
 badd +38 ~/Projects/goblin/tls.S
 badd +281 term://~/Projects/goblin//19654:/bin/bash
-badd +0 term://~/Projects/goblin//19747:/bin/bash
-badd +70 term://~/Projects/goblin//21855:/bin/bash
+badd +1 term://~/Projects/goblin//19747:/bin/bash
+badd +91 term://~/Projects/goblin//21855:/bin/bash
 argglobal
 %argdel
 $argadd NvimTree_1
 set stal=2
 tabnew +setlocal\ bufhidden=wipe
 tabrewind
-edit ~/Projects/goblin/src/loadable.cpp
+edit ~/Projects/goblin/src/x86_64/asm.S
 let s:save_splitbelow = &splitbelow
 let s:save_splitright = &splitright
 set splitbelow splitright
-wincmd _ | wincmd |
-vsplit
-1wincmd h
-wincmd w
 let &splitbelow = s:save_splitbelow
 let &splitright = s:save_splitright
 wincmd t
@@ -55,9 +51,8 @@ set winminheight=0
 set winheight=1
 set winminwidth=0
 set winwidth=1
-wincmd =
 argglobal
-balt ~/Projects/goblin/src/goblin.cpp
+balt ~/Projects/goblin/src/executable.cpp
 setlocal fdm=manual
 setlocal fde=0
 setlocal fmr={{{,}}}
@@ -68,37 +63,13 @@ setlocal fdn=20
 setlocal fen
 silent! normal! zE
 let &fdl = &fdl
-let s:l = 305 - ((16 * winheight(0) + 22) / 44)
+let s:l = 1 - ((0 * winheight(0) + 22) / 44)
 if s:l < 1 | let s:l = 1 | endif
 keepjumps exe s:l
 normal! zt
-keepjumps 305
-normal! 095|
+keepjumps 1
+normal! 0
 lcd ~/Projects/goblin
-wincmd w
-argglobal
-if bufexists(fnamemodify("term://~/Projects/goblin//21855:/bin/bash", ":p")) | buffer term://~/Projects/goblin//21855:/bin/bash | else | edit term://~/Projects/goblin//21855:/bin/bash | endif
-if &buftype ==# 'terminal'
-  silent file term://~/Projects/goblin//21855:/bin/bash
-endif
-balt ~/Projects/goblin/tls.S
-setlocal fdm=manual
-setlocal fde=0
-setlocal fmr={{{,}}}
-setlocal fdi=#
-setlocal fdl=0
-setlocal fml=1
-setlocal fdn=20
-setlocal fen
-let s:l = 91 - ((43 * winheight(0) + 22) / 44)
-if s:l < 1 | let s:l = 1 | endif
-keepjumps exe s:l
-normal! zt
-keepjumps 91
-normal! 034|
-lcd ~/Projects/goblin
-wincmd w
-wincmd =
 tabnext
 argglobal
 if bufexists(fnamemodify("term://~/Projects/goblin//19747:/bin/bash", ":p")) | buffer term://~/Projects/goblin//19747:/bin/bash | else | edit term://~/Projects/goblin//19747:/bin/bash | endif
