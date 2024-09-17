@@ -30,9 +30,10 @@ struct tls Loadable::s_tls;
 
 Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, const options_t options, const bool im_glibc)
     : ELF_File(file_path), m_im_glibc(im_glibc), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_module_id(module_id),
-      m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
+      m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
 
     full_parse();
+	dynsym_index = get_sect_indice(SHT_DYNSYM);
     m_segment_data.reserve(m_elf_header.e_phnum);
 }
 
@@ -77,6 +78,12 @@ void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
             break;
         case DT_RUNPATH:
             m_runpath = reinterpret_cast<char *>(dyn_table->d_un.d_val);
+            break;
+        case DT_RELR:
+            m_dyn.relr.m_addr = reinterpret_cast<Elf64_Relr *>(dyn_table->d_un.d_ptr + m_load_base_addr);
+            break;
+        case DT_RELRSZ:
+            m_dyn.relr.m_total_size = dyn_table->d_un.d_val;
             break;
         }
         dyn_table++;
@@ -286,8 +293,9 @@ void Loadable::build_shared_objs_tree(void) {
                                                                    // Loadable object
     }
 
-    apply_dyn_relocations();
-    apply_plt_relocations();
+    apply_dyn_rela_relocations();
+    apply_dyn_relr_relocations();
+    apply_plt_rela_relocations();
 
     init_extern_relas();
     for (auto &dep : m_dependencies) { // for every shared object dependency
@@ -302,20 +310,19 @@ void Loadable::build_shared_objs_tree(void) {
 
 /* for anyone reading this in the future, I'm very sorry for this
  * mess...Hopefully you pull through :) */
-void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable> &dep) {
+void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable> dep) {
     auto start = std::chrono::high_resolution_clock::now();
-    const auto dynsym_index = get_sect_indice(SHT_DYNSYM);
-    const auto entnum = m_sect_headers[dynsym_index].sh_size / m_sect_headers[dynsym_index].sh_entsize;
+    /*const auto dynsym_index = get_sect_indice(SHT_DYNSYM);*/
+    const auto dep_entnum = dep->m_sect_headers[dep->dynsym_index].sh_size / dep->m_sect_headers[dep->dynsym_index].sh_entsize;
 
     for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
         for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
             std::string org_sym_name = extern_rela.f_construct_name(m_dyn.str_table,
                                                                     m_dyn.sym_table[sym_index].st_name); // get name of the symbol
-            for (uint32_t i = 1; i < entnum; i++) { // for every symbol in the shared object
+            for (uint32_t i = 0; i < dep_entnum; i++) { // for every symbol in the dependency 
                 std::string dep_sym_name = dep->m_dyn.str_table + dep->m_dyn.sym_table[i].st_name;
                 if (dep_sym_name == org_sym_name) {                          // if this is the sym we're looking for
                     extern_rela.f_apply_relocation(this, dep, sym_index, i); // apply the relocation
-                                                                             // FIXME: extern_rela.syms.erase(sym_index);
                     break;
                 }
             }
@@ -344,7 +351,7 @@ void Loadable::apply_tls_relocations(void) {
     }
 }
 
-void Loadable::apply_plt_relocations(void) {
+void Loadable::apply_plt_rela_relocations(void) {
     if (m_plt.rela.m_addr == nullptr) {
         return;
     }
@@ -375,7 +382,19 @@ void Loadable::apply_plt_relocations(void) {
         }
     }
 }
-void Loadable::apply_dyn_relocations(void) {
+
+/*relatively new feature added to ELF*/
+void Loadable::apply_dyn_relr_relocations(void) {
+    if (m_dyn.relr.m_addr == nullptr) {
+        return;
+    }
+
+    for (Elf64_Word i = 0; i < (m_dyn.relr.m_total_size / m_dyn.relr.s_ENTRY_SIZE); i++) {
+        m_dyn.relr.m_addr[i] += m_load_base_addr;
+    }
+}
+
+void Loadable::apply_dyn_rela_relocations(void) {
     if (m_dyn.rela.m_addr == nullptr) {
         return;
     }
@@ -396,7 +415,10 @@ void Loadable::apply_dyn_relocations(void) {
             m_extern_relas[ExternRelasIndices::REL_COPY].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
         case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
-            *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
+            if (!m_im_glibc) {
+                *addr =
+                    reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
+            }
             break;
         case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the
                                 // address

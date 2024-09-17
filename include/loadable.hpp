@@ -31,6 +31,12 @@ struct rela_table {
     static constexpr Elf64_Xword s_ENTRY_SIZE = 24;
 };
 
+struct relr_table {
+	Elf64_Relr *m_addr;
+	Elf64_Xword m_total_size;
+	static constexpr Elf64_Xword s_ENTRY_SIZE = 8;
+};
+
 struct extern_rela {
     std::string (*f_construct_name)(const char *, const Elf64_Word);
     void (*f_apply_relocation)(Loadable *self, const std::shared_ptr<Loadable> &dep, const Elf64_Word sym_index,
@@ -79,9 +85,10 @@ class Loadable : public ELF_File {
     void map_segments(void);
 	void setup_segment(const Elf64_Word i);
     void set_correct_permissions(void);
-	void apply_plt_relocations(void);
-	void apply_dyn_relocations(void);
-    void apply_external_dyn_relocations(const std::shared_ptr<Loadable> &dep);
+	void apply_plt_rela_relocations(void);
+	void apply_dyn_rela_relocations(void);
+	void apply_dyn_relr_relocations(void);
+    void apply_external_dyn_relocations(const std::shared_ptr<Loadable> dep);
     void apply_tls_relocations(void);
     void init_extern_relas(void);
 
@@ -103,14 +110,17 @@ class Loadable : public ELF_File {
     char *m_runpath;
     struct {
         struct rela_table rela;
+		struct relr_table relr;
         Elf64_Sym *sym_table;
         char *str_table;
     } m_dyn;
 
     struct {
-        rela_table rela;
+        struct rela_table rela;
         Elf64_Addr *got;
     } m_plt;
+
+	uint16_t dynsym_index;	
 
     std::set<std::shared_ptr<Loadable>>
         m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
