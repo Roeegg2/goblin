@@ -7,7 +7,8 @@ using namespace Goblin;
 
 /*static void parse_options(int argc, char** argv, options_t& options) {*/
 /*	auto error_out = []() {*/
-/*		std::cerr << "Usage: ./goblin <executable> [-b=<eager|lazy>] [-sr=<elf-hash|gnu-hash|symtab|optimal>]" << "\n";*/
+/*		std::cerr << "Usage: ./goblin <executable> [-b=<eager|lazy>]
+ * [-sr=<elf-hash|gnu-hash|symtab|optimal>]" << "\n";*/
 /*		exit(1);*/
 /*	};*/
 /**/
@@ -17,20 +18,24 @@ using namespace Goblin;
 /*		} else if (std::strcmp(binding, "lazy") == 0) {*/
 /*			options.binding = BINDING_LAZY;*/
 /*		} else {*/
-/*			std::cerr << "Invalid binding option: " << binding << "\n";*/
+/*			std::cerr << "Invalid binding option: " << binding <<
+ * "\n";*/
 /*			error_out();	*/
 /*		}*/
 /*	};*/
 /**/
 /*	auto parse_symbol_resolution = [&](const char* symbol_resolution) {*/
 /*		if (std::strcmp(symbol_resolution, "elf-hash") == 0) {*/
-/*			options.symbol_resolution = SYMBOL_RESOLUTION_ELF_HASH;*/
+/*			options.symbol_resolution =
+ * SYMBOL_RESOLUTION_ELF_HASH;*/
 /*		} else if (std::strcmp(symbol_resolution, "gnu-hash") == 0) {*/
-/*			options.symbol_resolution = SYMBOL_RESOLUTION_GNU_HASH;*/
+/*			options.symbol_resolution =
+ * SYMBOL_RESOLUTION_GNU_HASH;*/
 /*		} else if (std::strcmp(symbol_resolution, "symtab") == 0) {*/
 /*			options.symbol_resolution = SYMBOL_RESOLUTION_SYMTAB;*/
 /*		} else {*/
-/*			std::cerr << "Invalid symbol resolution option: " << symbol_resolution << "\n";*/
+/*			std::cerr << "Invalid symbol resolution option: " <<
+ * symbol_resolution << "\n";*/
 /*			error_out();*/
 /*		}*/
 /*	};*/
@@ -54,12 +59,12 @@ using namespace Goblin;
 
 /*int main(int argc, char** argv) {*/
 int main(void) {
-	options_t options = { 
-		.binding = BINDING_OPTIMAL, 
-		.symbol_resolution = SYMBOL_RESOLUTION_OPTIMAL,
-	};
-	/*parse_options(argc, argv, options);*/
-	Executable* executable = new Executable("tests/hello-dl", options);
+    options_t options = {
+        .binding           = BINDING_EAGER,
+        .symbol_resolution = SYMBOL_RESOLUTION_OPTIMAL,
+    };
+    /*parse_options(argc, argv, options);*/
+    Executable *executable = new Executable("tests/libctest", options);
 
 #ifdef DEBUG
     executable->full_print();
