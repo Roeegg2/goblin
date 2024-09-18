@@ -25,7 +25,7 @@ const char *Loadable::s_DEFAULT_SHARED_OBJ_PATHS[]{
     "/lib64/",
     "/usr/lib64/",
 };
-
+std::vector<Loadable *> Loadable::s_loaded_dependencies;
 struct tls Loadable::s_tls;
 
 Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, const options_t options, const bool im_glibc)
@@ -56,12 +56,12 @@ Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
         }
     }
 
-	return nullptr;
+    return nullptr;
 }
 
-Elf64_Sym* Loadable::lookup_gnu_hash_dynsym(const char* sym_name) const {
-	return nullptr;
-}
+/*Elf64_Sym* Loadable::lookup_gnu_hash_dynsym(const char* sym_name) const {*/
+/*	return nullptr;*/
+/*}*/
 
 Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
     const auto hash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
@@ -134,22 +134,34 @@ void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
     }
 }
 
-void Loadable::construct_loadeables_for_shared_objects(const std::set<Elf64_Xword> &m_dt_needed_syms) {
+void Loadable::construct_loadables_for_shared_objects(const std::set<Elf64_Xword> &m_dt_needed_syms) {
     for (Elf64_Xword dt_needed : m_dt_needed_syms) { // for each SO
         std::string path;
+        for (modid_t i = 0; i < s_loaded_dependencies.size(); i++) {
+            if (s_loaded_dependencies[i]->m_elf_file_path.filename() == m_dyn.str_table + dt_needed) {
+                m_dependencies.insert(s_loaded_dependencies[i]);
+                goto go_next_dependency;
+            }
+        }
+
         if (resolve_path_rpath_runpath(m_rpath, path, m_dyn.str_table + dt_needed) ||
             resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
             resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
-#ifdef INFO
-            std::cout << "Loading shared object \"" << path << "\" and assigning module ID" << m_module_id + 1 << " \n";
-#endif
-            m_dependencies.insert(std::make_shared<Loadable>(path.c_str(), m_module_id + 1, m_options,
-                                                             std::strncmp(m_dyn.str_table + dt_needed, "libc.so", 6) == 0));
-            continue;
+
+            std::cout << "Loading shared object \"" << path << "\" and assigning module ID: " << m_module_id + 1 << " \n";
+
+            s_loaded_dependencies.push_back(
+                new Loadable(path.c_str(), m_module_id + 1, m_options, std::strncmp(m_dyn.str_table + dt_needed, "libc.so", 6) == 0));
+            m_dependencies.insert(s_loaded_dependencies.back());
+
+            goto go_next_dependency;
         }
 
         std::cerr << "Failed to resolve path for shared object: " << m_dyn.str_table + dt_needed << "\n";
         exit(1);
+
+    go_next_dependency:
+        continue;
     }
 }
 
@@ -301,13 +313,12 @@ void Loadable::init_extern_relas(void) {
         }
         return ret;
     };
-    auto apply_relocation_copy = [](Loadable *self, const std::shared_ptr<Loadable> &dep, const Elf64_Word sym_index, const uint32_t i) {
+    auto apply_relocation_copy = [](Loadable *self, const Loadable *dep, const Elf64_Word sym_index, const uint32_t i) {
         char *src = reinterpret_cast<char *>(self->m_dyn.sym_table[sym_index].st_value + self->m_load_base_addr);
         const char *dst = reinterpret_cast<const char *>(dep->m_dyn.sym_table[i].st_value + dep->m_load_base_addr);
         std::strcpy(src, dst);
     };
-    auto apply_relocation_jumps_globd = [](Loadable *self, const std::shared_ptr<Loadable> &dep, const Elf64_Word sym_index,
-                                           const uint32_t i) {
+    auto apply_relocation_jumps_globd = [](Loadable *self, const Loadable *dep, const Elf64_Word sym_index, const uint32_t i) {
         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(self->m_dyn.rela.m_addr[sym_index].r_offset + self->m_load_base_addr);
         *addr = dep->m_dyn.sym_table[i].st_value + dep->m_load_base_addr + dep->m_dyn.rela.m_addr[i].r_addend;
     };
@@ -323,7 +334,7 @@ void Loadable::build_shared_objs_tree(void) {
     if (m_dyn_seg_index >= 0) {
         std::set<Elf64_Xword> m_dt_needed_syms;
         parse_dyn_segment(m_dt_needed_syms);
-        construct_loadeables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a
+        construct_loadables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a
                                                                    // Loadable object
     }
 
@@ -344,13 +355,14 @@ void Loadable::build_shared_objs_tree(void) {
 
 /* for anyone reading this in the future, I'm very sorry for this
  * mess...Hopefully you pull through :) */
-void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable> dep) {
+void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
     auto start = std::chrono::high_resolution_clock::now();
     /*const auto dynsym_index = get_sect_indice(SHT_DYNSYM);*/
     for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
         for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
-            std::string org_sym_name = extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of the symbol
-																														  //
+            std::string org_sym_name =
+                extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of the symbol
+                                                                                                   //
             Elf64_Sym *sym;
             if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) {
                 sym = dep->lookup_elf_hash_dynsym(org_sym_name.c_str());
@@ -364,13 +376,6 @@ void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable> de
                 std::cerr << "Symbol not found: " << org_sym_name << "\n";
                 exit(1);
             }
-            /*for (uint32_t i = 0; i < dep_entnum; i++) { // for every symbol in the dependency */
-            /*    std::string dep_sym_name = dep->m_dyn.str_table + dep->m_dyn.sym_table[i].st_name;*/
-            /*    if (dep_sym_name == org_sym_name) {                          // if this is the sym we're looking for*/
-            /*        extern_rela.f_apply_relocation(this, dep, sym_index, i); // apply the relocation*/
-            /*        break;*/
-            /*    }*/
-            /*}*/
         }
     }
     auto end = std::chrono::high_resolution_clock::now();

@@ -21,6 +21,7 @@ struct tcb {
 
 class Executable final : public Loadable {
   private:
+	inline void allocate_tid(tid_t &tid);
     void init_thread_static_tls(void);
 
   public:
