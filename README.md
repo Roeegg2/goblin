@@ -12,7 +12,7 @@ Features:
 - [x] full shared object path resolution (RPATH, RUNPATH, LD_LIBRARY_PATH, etc.) (except for /etc/ld.so.cache)
 - [x] eager binding
 - [ ] lazy binding
-- [ ] ELF hash
+- [x] ELF hash
 - [ ] GNU hash
 - [ ] symbol versioning
 - [x] static TLS support

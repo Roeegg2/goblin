@@ -132,28 +132,4 @@ uint16_t ELF_File::get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) con
 	return 0;
 }
 
-unsigned long ELF_File::elf_hash(const unsigned char *name) {
-    unsigned long hash = 0;
-    unsigned long g;
-
-    while (*name) {
-        hash = (hash << 4) + *name++;
-        g    = hash & 0xF0000000;
-        if (g != 0)
-            hash ^= g >> 24;
-        hash &= ~g;
-    }
-
-    return hash;
-}
-
-unsigned long ELF_File::gnu_hash(const unsigned char *name) {
-    unsigned long h = 5381;
-
-    for (unsigned char c = *name; c != '\0'; c = *++name) {
-        h = (h << 5) + h + c;
-    }
-
-    return h;
-}
 }; // namespace Goblin

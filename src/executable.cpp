@@ -100,9 +100,7 @@ void Executable::run(void) {
 #ifdef INFO
     std::cout << "\nStarting execution..." << std::endl;
 #endif
-    munmap(m_segment_data[m_dyn_seg_index],
-           m_prog_headers[m_dyn_seg_index].p_memsz); // Goblin finished doing its magic, so there is no need
-                                                     // for the dynamic segment anymore
+	// FIXME: get rid of not used anymore stuff
     void (*start_execution)(void) = reinterpret_cast<void (*)()>(m_elf_header.e_entry + m_load_base_addr);
     /*void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x1139 +
      * m_load_base_addr);*/

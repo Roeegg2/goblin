@@ -31,8 +31,6 @@ class ELF_File {
 #endif
   protected:
 	uint16_t get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) const; 
-    static unsigned long elf_hash(const unsigned char *name);
-    static unsigned long gnu_hash(const unsigned char *name);
 
   private:
     inline void check_elf_header_magic(void);

@@ -1,5 +1,5 @@
-.zed
 bin
 goblin
 *.swp
+Session.vim
 *.json

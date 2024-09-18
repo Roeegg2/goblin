@@ -95,6 +95,10 @@ class Loadable : public ELF_File {
     static int elf_perm_to_mmap_perms(const uint32_t elf_flags);
     uint32_t get_total_page_count(void) const;
 
+	Elf64_Sym *lookup_regular_dynsym(const char *sym_name) const;
+	Elf64_Sym *lookup_elf_hash_dynsym(const char *sym_name) const; 
+	Elf64_Sym* lookup_gnu_hash_dynsym(const char* sym_name) const;
+
   protected:
 	bool m_im_glibc;
     options_t m_options;
@@ -120,7 +124,11 @@ class Loadable : public ELF_File {
         Elf64_Addr *got;
     } m_plt;
 
-	uint16_t dynsym_index;	
+	struct {
+		 uint16_t elf_hash;
+		 uint16_t gnu_hash;
+		 uint16_t dynsym;
+	} m_sht_indices;
 
     std::set<std::shared_ptr<Loadable>>
         m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies

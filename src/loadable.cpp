@@ -33,7 +33,9 @@ Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, cons
       m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
 
     full_parse();
-	dynsym_index = get_sect_indice(SHT_DYNSYM);
+    m_sht_indices.dynsym = get_sect_indice(SHT_DYNSYM);
+    m_sht_indices.elf_hash = get_sect_indice(SHT_HASH);
+    m_sht_indices.gnu_hash = get_sect_indice(SHT_GNU_HASH);
     m_segment_data.reserve(m_elf_header.e_phnum);
 }
 
@@ -43,6 +45,38 @@ Loadable::~Loadable(void) {
     /*        munmap(m_segment_data[i], m_prog_headers[i].p_memsz);*/
     /*    }*/
     /*}*/
+}
+
+Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
+    static const auto ent_num = m_sect_headers[m_sht_indices.dynsym].sh_size / m_sect_headers[m_sht_indices.dynsym].sh_entsize;
+
+    for (uint32_t i = 0; i < ent_num; i++) {
+        if (std::strcmp(m_dyn.str_table + m_dyn.sym_table[i].st_name, sym_name) == 0) {
+            return m_dyn.sym_table + i;
+        }
+    }
+
+	return nullptr;
+}
+
+Elf64_Sym* Loadable::lookup_gnu_hash_dynsym(const char* sym_name) const {
+	return nullptr;
+}
+
+Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
+    const auto hash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
+    const auto nbuckets = *(reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr));
+    /*const auto nchains = *(reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr) + 1);*/
+    const auto buckets = (reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr) + 2);
+    const auto chains = (reinterpret_cast<const uint32_t *>(buckets) + nbuckets);
+
+    for (uint32_t i = buckets[hash % nbuckets]; i != STN_UNDEF; i = chains[i]) {
+        if (std::strcmp(m_dyn.str_table + m_dyn.sym_table[i].st_name, sym_name) == 0) {
+            return m_dyn.sym_table + i;
+        }
+    }
+
+    return nullptr;
 }
 
 void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
@@ -293,8 +327,8 @@ void Loadable::build_shared_objs_tree(void) {
                                                                    // Loadable object
     }
 
-    apply_dyn_rela_relocations();
     apply_dyn_relr_relocations();
+    apply_dyn_rela_relocations();
     apply_plt_rela_relocations();
 
     init_extern_relas();
@@ -313,19 +347,30 @@ void Loadable::build_shared_objs_tree(void) {
 void Loadable::apply_external_dyn_relocations(const std::shared_ptr<Loadable> dep) {
     auto start = std::chrono::high_resolution_clock::now();
     /*const auto dynsym_index = get_sect_indice(SHT_DYNSYM);*/
-    const auto dep_entnum = dep->m_sect_headers[dep->dynsym_index].sh_size / dep->m_sect_headers[dep->dynsym_index].sh_entsize;
-
     for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
         for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
-            std::string org_sym_name = extern_rela.f_construct_name(m_dyn.str_table,
-                                                                    m_dyn.sym_table[sym_index].st_name); // get name of the symbol
-            for (uint32_t i = 0; i < dep_entnum; i++) { // for every symbol in the dependency 
-                std::string dep_sym_name = dep->m_dyn.str_table + dep->m_dyn.sym_table[i].st_name;
-                if (dep_sym_name == org_sym_name) {                          // if this is the sym we're looking for
-                    extern_rela.f_apply_relocation(this, dep, sym_index, i); // apply the relocation
-                    break;
-                }
+            std::string org_sym_name = extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of the symbol
+																														  //
+            Elf64_Sym *sym;
+            if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) {
+                sym = dep->lookup_elf_hash_dynsym(org_sym_name.c_str());
+            } else {
+                sym = dep->lookup_regular_dynsym(org_sym_name.c_str());
             }
+
+            if (sym != nullptr) {
+                extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
+            } else {
+                std::cerr << "Symbol not found: " << org_sym_name << "\n";
+                exit(1);
+            }
+            /*for (uint32_t i = 0; i < dep_entnum; i++) { // for every symbol in the dependency */
+            /*    std::string dep_sym_name = dep->m_dyn.str_table + dep->m_dyn.sym_table[i].st_name;*/
+            /*    if (dep_sym_name == org_sym_name) {                          // if this is the sym we're looking for*/
+            /*        extern_rela.f_apply_relocation(this, dep, sym_index, i); // apply the relocation*/
+            /*        break;*/
+            /*    }*/
+            /*}*/
         }
     }
     auto end = std::chrono::high_resolution_clock::now();
