@@ -67,5 +67,5 @@ int main(int argc, char **argv) {
 #endif
     executable->run();
 
-    exit(0);
+    return 0;
 }

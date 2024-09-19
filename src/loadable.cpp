@@ -12,8 +12,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include <chrono>
-
 extern "C" {
 char **environ;
 };
@@ -39,13 +37,7 @@ Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, cons
     m_segment_data.reserve(m_elf_header.e_phnum);
 }
 
-Loadable::~Loadable(void) {
-    /*for (int i = 0; i < m_elf_header.e_phnum; i++) { // unmap all segments*/
-    /*    if (m_segment_data[i] != nullptr) {*/
-    /*        munmap(m_segment_data[i], m_prog_headers[i].p_memsz);*/
-    /*    }*/
-    /*}*/
-}
+Loadable::~Loadable(void) {}
 
 Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     static const auto ent_num = m_sect_headers[m_sht_indices.dynsym].sh_size / m_sect_headers[m_sht_indices.dynsym].sh_entsize;
@@ -59,9 +51,7 @@ Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     return nullptr;
 }
 
-/*Elf64_Sym* Loadable::lookup_gnu_hash_dynsym(const char* sym_name) const {*/
-/*	return nullptr;*/
-/*}*/
+Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const { return nullptr; }
 
 Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
     const auto hash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
@@ -335,7 +325,7 @@ void Loadable::build_shared_objs_tree(void) {
         std::set<Elf64_Xword> m_dt_needed_syms;
         parse_dyn_segment(m_dt_needed_syms);
         construct_loadables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a
-                                                                   // Loadable object
+                                                                  // Loadable object
     }
 
     apply_dyn_relr_relocations();
@@ -356,8 +346,6 @@ void Loadable::build_shared_objs_tree(void) {
 /* for anyone reading this in the future, I'm very sorry for this
  * mess...Hopefully you pull through :) */
 void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
-    auto start = std::chrono::high_resolution_clock::now();
-    /*const auto dynsym_index = get_sect_indice(SHT_DYNSYM);*/
     for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
         for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
             std::string org_sym_name =
@@ -378,9 +366,6 @@ void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
             }
         }
     }
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-    std::cout << "Time taken: " << duration.count() << " seconds" << std::endl;
 }
 
 void Loadable::apply_tls_relocations(void) {
@@ -486,13 +471,3 @@ void Loadable::apply_dyn_rela_relocations(void) {
     }
 }
 }; // namespace Goblin
-   /*
-       get indices of sections (symtab, strtab, gnu.hash, .hash)
-       if (there is a gnu.hash)
-           use gnu.hash
-       else if (there is a .hash)
-           use .hash
-       else
-           use symtab
-   
-   */

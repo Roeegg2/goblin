@@ -1,8 +1,8 @@
 #include "../include/executable.hpp"
 
 #include <cstring>
-#include <iostream>
 #include <elf.h>
+#include <iostream>
 #include <sys/mman.h>
 
 /*prefix Goblin internal assembly functions (to avoid naming collision with
@@ -67,7 +67,7 @@ void Executable::init_thread_static_tls() {
                         // specified in variant 2
     tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) + s_tls.m_total_imgs_size); // we want to point to the end of the tls
                                                                                                // blocks, and start of the tcb
-    GI(tls_init_tp)(tp); // set %fs register to point to the TCB
+    GI(tls_init_tp)(tp);                                                                       // set %fs register to point to the TCB
 
     /*FIXME: improve this mechanism*/
     reinterpret_cast<struct tcb *>(tp)->tp = tp;           // set the TCB tp to point to the start of the tls block images
@@ -78,14 +78,16 @@ void Executable::init_thread_static_tls() {
     for (auto &img : s_tls.m_init_imgs) {                                                      // for each TLS block image
         if (img.m_is_static_model) {                                                           // if the TLS block is using static model
             std::memcpy(tp, img.m_data,
-                        img.m_size);      // copy the TLS block image to the TLS block
+                        img.m_size);                                     // copy the TLS block image to the TLS block
             dtvs[reinterpret_cast<struct tcb *>(tp)->tid].push_back(tp); // NOTE: we initlized the m_init_imgs vector the same order we
-                                          // would've assigned module ids so we can just push_back and not
-                                          // have to worry about the order
+                                                                         // would've assigned module ids so we can just push_back and not
+                                                                         // have to worry about the order
             tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) + img.m_size);
         }
     }
 }
+
+void Executable::cleanup(void) { return; }
 
 void Executable::run(void) {
     build_shared_objs_tree();
@@ -96,10 +98,10 @@ void Executable::run(void) {
     }
 #endif
     std::cout << "\nStarting execution..." << std::endl;
+    cleanup();
     // FIXME: get rid of not used anymore stuff
+
     void (*start_execution)(void) = reinterpret_cast<void (*)()>(m_elf_header.e_entry + m_load_base_addr);
-    /*void (*start_execution)(void) = reinterpret_cast<void(*)()>(0x1139 +
-     * m_load_base_addr);*/
     start_execution();
 }
 }; // namespace Goblin

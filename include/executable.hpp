@@ -28,6 +28,7 @@ class Executable final : public Loadable {
     Executable(const std::string file_path, const options_t options);
     ~Executable(void);
     void run(void);
+	void cleanup(void);
 
     void *__tls_get_addr(tls_index *ti);
 
