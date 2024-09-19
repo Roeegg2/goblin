@@ -1,5 +1,4 @@
 #include "../include/loadable.hpp"
-#include "../include/utils.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -24,11 +23,10 @@ const char *Loadable::s_DEFAULT_SHARED_OBJ_PATHS[]{
     "/usr/lib64/",
 };
 std::vector<Loadable *> Loadable::s_loaded_dependencies;
-struct tls Loadable::s_tls;
 
-Loadable::Loadable(const std::string file_path, const Elf64_Word module_id, const options_t options, const bool im_glibc)
-    : ELF_File(file_path), m_im_glibc(im_glibc), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_module_id(module_id),
-      m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
+Loadable::Loadable(const std::string file_path, const options_t options, const bool im_glibc)
+    : ELF_File(file_path), m_im_glibc(im_glibc), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr),
+      m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
 
     full_parse();
     m_sht_indices.dynsym = get_sect_indice(SHT_DYNSYM);
@@ -51,12 +49,15 @@ Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     return nullptr;
 }
 
-Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const { return nullptr; }
+// Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const { return nullptr; }
 
 Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
+    if (m_sht_indices.elf_hash == (uint16_t)(-1)) {
+        std::cerr << "Can't use ELF hash since no .hash section is found\n";
+        exit(1);
+    }
     const auto hash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
     const auto nbuckets = *(reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr));
-    /*const auto nchains = *(reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr) + 1);*/
     const auto buckets = (reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr) + 2);
     const auto chains = (reinterpret_cast<const uint32_t *>(buckets) + nbuckets);
 
@@ -115,43 +116,51 @@ void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
 
     // doing this later because we need to get m_dyn.str_table first
     if (m_rpath != nullptr) {
-        m_rpath = reinterpret_cast<Elf64_Addr>(m_dyn.str_table) + m_rpath; // adding the offset (current value of
-                                                                           // m_rpath) with the dynstr table
+        m_rpath =
+            reinterpret_cast<Elf64_Addr>(m_dyn.str_table) + m_rpath; // adding the offset (current value of m_rpath) with the dynstr table
     }
     if (m_runpath != nullptr) {
-        m_runpath = reinterpret_cast<Elf64_Addr>(m_dyn.str_table) + m_runpath; // adding the offset (current value of
-                                                                               // m_runpath) with the dynstr table
+        m_runpath = reinterpret_cast<Elf64_Addr>(m_dyn.str_table) +
+                    m_runpath; // adding the offset (current value of  m_runpath) with the dynstr table
     }
 }
 
-void Loadable::construct_loadables_for_shared_objects(const std::set<Elf64_Xword> &m_dt_needed_syms) {
-    for (Elf64_Xword dt_needed : m_dt_needed_syms) { // for each SO
-        std::string path;
-        for (modid_t i = 0; i < s_loaded_dependencies.size(); i++) {
-            if (s_loaded_dependencies[i]->m_elf_file_path.filename() == m_dyn.str_table + dt_needed) {
-                m_dependencies.insert(s_loaded_dependencies[i]);
-                goto go_next_dependency;
-            }
+bool Loadable::check_n_handle_loaded_dep(const Elf64_Xword dt_needed) {
+    const uint16_t foo_size = s_loaded_dependencies.size();
+    for (uint16_t i = 0; i < foo_size; i++) {
+        if (s_loaded_dependencies[i]->m_elf_file_path.filename() == m_dyn.str_table + dt_needed) {
+            m_dependencies.insert(s_loaded_dependencies[i]);
+            return true;
         }
+    }
 
-        if (resolve_path_rpath_runpath(m_rpath, path, m_dyn.str_table + dt_needed) ||
-            resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
-            resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
+    return false;
+}
 
-            std::cout << "Loading shared object \"" << path << "\" and assigning module ID: " << m_module_id + 1 << " \n";
+bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
+    std::string path;
+    if (resolve_path_rpath_runpath(m_rpath, path, m_dyn.str_table + dt_needed) ||
+        resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
+        resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 
-            s_loaded_dependencies.push_back(
-                new Loadable(path.c_str(), m_module_id + 1, m_options, std::strncmp(m_dyn.str_table + dt_needed, "libc.so", 6) == 0));
-            m_dependencies.insert(s_loaded_dependencies.back());
+        s_loaded_dependencies.push_back(
+            new Loadable(path.c_str(), m_options, std::strncmp(m_dyn.str_table + dt_needed, "libc.so", 6) == 0));
+        m_dependencies.insert(s_loaded_dependencies.back());
 
-            goto go_next_dependency;
+        return true;
+    }
+
+    return false;
+}
+
+inline void Loadable::construct_loadables_for_shared_objects(const std::set<Elf64_Xword> &m_dt_needed_syms) {
+    for (Elf64_Xword dt_needed : m_dt_needed_syms) { // for each SO
+        if (check_n_handle_loaded_dep(dt_needed) || check_n_handle_new_dep(dt_needed)) {
+            continue;
         }
 
         std::cerr << "Failed to resolve path for shared object: " << m_dyn.str_table + dt_needed << "\n";
         exit(1);
-
-    go_next_dependency:
-        continue;
     }
 }
 
@@ -233,15 +242,14 @@ void Loadable::setup_segment(const Elf64_Word i) {
     m_elf_file.read(reinterpret_cast<char *>(m_segment_data[i]),
                     m_prog_headers[i].p_filesz); // read data from file to memory
 
-    // As specified in the System V ABI, all data not mapped from file should be
-    // zeroed out
+    // As specified in the System V ABI, all data not mapped from file should be zeroed out
     if (m_prog_headers[i].p_filesz < m_prog_headers[i].p_memsz) {
         memset(reinterpret_cast<void *>(m_prog_headers[i].p_vaddr + m_load_base_addr + m_prog_headers[i].p_filesz), 0,
                m_prog_headers[i].p_memsz - m_prog_headers[i].p_filesz);
     }
 }
 
-void Loadable::map_segments(void) {
+void Loadable::map_segments(struct tls *tls, const id_t mod_id) {
     alloc_mem_for_segments();
 
     for (int8_t i = 0; i < m_elf_header.e_phnum; i++) {
@@ -252,14 +260,13 @@ void Loadable::map_segments(void) {
         switch (m_prog_headers[i].p_type) {
         case PT_TLS:
             m_tls_seg_index = i;
-            s_tls.m_init_imgs.push_back({.m_module_id = m_module_id, // FIXME: might need to change this if
-                                                                     // there are cases where the module ID is
-                                                                     // decided upon at compile/linktime
-                                         .m_size = m_prog_headers[i].p_memsz,
-                                         .m_data = m_segment_data[i],
-                                         .m_tlsoffset = s_tls.m_total_imgs_size,
-                                         .m_is_static_model = true});
-            s_tls.m_total_imgs_size += m_prog_headers[i].p_memsz;
+            tls->m_init_imgs.push_back({.m_module_id = mod_id, // FIXME: might need to change this if there are cases
+                                                               // where the module ID is decided upon at compile/linktime
+                                        .m_size = m_prog_headers[i].p_memsz,
+                                        .m_data = m_segment_data[i],
+                                        .m_tlsoffset = tls->m_total_imgs_size,
+                                        .m_is_static_model = true});
+            tls->m_total_imgs_size += m_prog_headers[i].p_memsz;
             break;
         case PT_DYNAMIC:
             m_dyn_seg_index = i;
@@ -319,13 +326,16 @@ void Loadable::init_extern_relas(void) {
     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_apply_relocation = apply_relocation_jumps_globd;
 }
 
-void Loadable::build_shared_objs_tree(void) {
-    map_segments();
+void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
+    const id_t mod_id = allocate_id(exec_shared.m_mod_ids);
+
+    std::cout << "Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id << " \n";
+
+    map_segments(&exec_shared.m_tls, mod_id);
     if (m_dyn_seg_index >= 0) {
         std::set<Elf64_Xword> m_dt_needed_syms;
         parse_dyn_segment(m_dt_needed_syms);
-        construct_loadables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a
-                                                                  // Loadable object
+        construct_loadables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a Loadable object
     }
 
     apply_dyn_relr_relocations();
@@ -333,12 +343,11 @@ void Loadable::build_shared_objs_tree(void) {
     apply_plt_rela_relocations();
 
     init_extern_relas();
-    for (auto &dep : m_dependencies) { // for every shared object dependency
-        dep->build_shared_objs_tree(); // recursively build the shared objects
-                                       // tree
+    for (auto &dep : m_dependencies) { // for every shared object dependency recursively build the shared objects tree
+        dep->build_shared_objs_tree(exec_shared);
         apply_external_dyn_relocations(dep);
     }
-    apply_tls_relocations();
+    apply_tls_relocations(mod_id);
 
     set_correct_permissions(); // set the correct permissions for the segments
 }
@@ -368,7 +377,7 @@ void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
     }
 }
 
-void Loadable::apply_tls_relocations(void) {
+void Loadable::apply_tls_relocations(const id_t mod_id) {
     for (auto i : m_tls_relas) {
         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
         Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
@@ -377,7 +386,7 @@ void Loadable::apply_tls_relocations(void) {
             *addr = sym->st_value + m_load_base_addr;
             break;
         case R_X86_64_DTPMOD64:
-            *addr = m_module_id;
+            *addr = mod_id;
             break;
         default: /*case of R_X86_64_TPOFF64*/
             *addr = sym->st_value + m_dyn.rela.m_addr[i].r_addend + m_load_base_addr;
@@ -400,8 +409,7 @@ void Loadable::apply_plt_rela_relocations(void) {
 
             switch (ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info)) {
             case R_X86_64_JUMP_SLOT:
-            case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to
-                                    // the address
+            case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
                 m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
                 break;
             case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
@@ -445,8 +453,7 @@ void Loadable::apply_dyn_rela_relocations(void) {
         case R_X86_64_64:
             *addr = m_dyn.rela.m_addr[i].r_addend + sym->st_value + m_load_base_addr;
             break;
-        case R_X86_64_COPY: // advacned relocation type (data is needed from
-                            // external object)
+        case R_X86_64_COPY: // advacned relocation type (data is needed from external object)
             m_extern_relas[ExternRelasIndices::REL_COPY].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
         case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
@@ -455,8 +462,7 @@ void Loadable::apply_dyn_rela_relocations(void) {
                     reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
             }
             break;
-        case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the
-                                // address
+        case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
             m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
         case R_X86_64_DTPOFF64:

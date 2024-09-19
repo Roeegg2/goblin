@@ -15,12 +15,12 @@ void *GI(tls_get_tp)(void);
 }
 
 namespace Goblin {
-Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path, 1, options) {}
+Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path, options) {}
 
 Executable::~Executable(void) {}
 
 void *Executable::__tls_get_addr(tls_index *ti) {
-    const tid_t tid = reinterpret_cast<struct tcb *>(_goblin_tls_get_tp())->tid;
+    const id_t tid = reinterpret_cast<struct tcb *>(_goblin_tls_get_tp())->tid;
     if (ti->ti_module > dtvs[tid].size()) { // first case no block is allocated - when module id
                                             // is greater than the number of tls blocks allocated
         goto allocate_new;
@@ -39,9 +39,9 @@ void *Executable::__tls_get_addr(tls_index *ti) {
 
 allocate_new:
     dtvs[tid].resize(ti->ti_module);
-    dtvs[tid][ti->ti_module - 1] = mmap(nullptr, s_tls.m_total_imgs_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    dtvs[tid][ti->ti_module - 1] = mmap(nullptr, m_tls.m_total_imgs_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-    std::memcpy(dtvs[tid][ti->ti_module - 1], s_tls.m_init_imgs[ti->ti_module - 1].m_data, s_tls.m_init_imgs[ti->ti_module - 1].m_size);
+    std::memcpy(dtvs[tid][ti->ti_module - 1], m_tls.m_init_imgs[ti->ti_module - 1].m_data, m_tls.m_init_imgs[ti->ti_module - 1].m_size);
 
     return reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(dtvs[tid][ti->ti_module - 1]) + ti->ti_offset);
 }
@@ -50,38 +50,24 @@ allocate_new:
  * right to the TCB, and on the left to the TLS blocks. so in the code its used
  * sometimes for this and sometimes for that*/
 
-inline void Executable::allocate_tid(tid_t &tid) {
-    if (m_free_tids.empty()) { // if there are no free tids, increase the size of
-                               // the tcb vector
-        tid = m_tcbs.size();
-        m_tcbs.back().tid = m_tcbs.size() - 1;
-    } else { // if there are free tids, just repurpose one
-        tid = m_free_tids.front();
-        m_free_tids.pop();
-    }
-}
-
 void Executable::init_thread_static_tls() {
-    void *tp = mmap(nullptr, s_tls.m_total_imgs_size + sizeof(struct tcb), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,
-                    0); // allocate memory for the tls blocks and tcb, as
-                        // specified in variant 2
-    tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) + s_tls.m_total_imgs_size); // we want to point to the end of the tls
-                                                                                               // blocks, and start of the tcb
-    GI(tls_init_tp)(tp);                                                                       // set %fs register to point to the TCB
+    // allocate memory for the tls blocks and tcb, as specified in variant 2
+    void *tp = mmap(nullptr, m_tls.m_total_imgs_size + sizeof(struct tcb), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) + m_tls.m_total_imgs_size);
+    GI(tls_init_tp)(tp); // set the thread pointer to point to the tcb
 
     /*FIXME: improve this mechanism*/
-    reinterpret_cast<struct tcb *>(tp)->tp = tp;           // set the TCB tp to point to the start of the tls block images
-    allocate_tid(reinterpret_cast<struct tcb *>(tp)->tid); // allocate a new tid
+    reinterpret_cast<struct tcb *>(tp)->tp = tp;                 // make TCP point to self
+    reinterpret_cast<struct tcb *>(tp)->tid = allocate_id(tids); // allocate a new tid
 
-    tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) - s_tls.m_total_imgs_size); // point to the start of the tls block images
-                                                                                               // again
-    for (auto &img : s_tls.m_init_imgs) {                                                      // for each TLS block image
-        if (img.m_is_static_model) {                                                           // if the TLS block is using static model
-            std::memcpy(tp, img.m_data,
-                        img.m_size);                                     // copy the TLS block image to the TLS block
-            dtvs[reinterpret_cast<struct tcb *>(tp)->tid].push_back(tp); // NOTE: we initlized the m_init_imgs vector the same order we
-                                                                         // would've assigned module ids so we can just push_back and not
-                                                                         // have to worry about the order
+    tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) - m_tls.m_total_imgs_size);
+    for (auto &img : m_tls.m_init_imgs) {
+        if (img.m_is_static_model) {
+
+            std::memcpy(tp, img.m_data, img.m_size);                         // copy the TLS block image to the TLS block
+            dtvs[reinterpret_cast<struct tcb *>(tp)->tid - 1].push_back(tp); // NOTE: we initlized the m_init_imgs vector the same order we
+                                                                             // would've assigned module ids so we can just push_back and
+                                                                             // not have to worry about the order
             tp = reinterpret_cast<void *>(reinterpret_cast<Elf64_Addr>(tp) + img.m_size);
         }
     }
@@ -90,7 +76,9 @@ void Executable::init_thread_static_tls() {
 void Executable::cleanup(void) { return; }
 
 void Executable::run(void) {
-    build_shared_objs_tree();
+    build_shared_objs_tree(m_exec_shared);
+
+    init_thread_static_tls();
 
 #ifdef DEBUG
     if (m_dyn_seg_index > 0) {

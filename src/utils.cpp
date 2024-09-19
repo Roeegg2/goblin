@@ -1,6 +1,20 @@
 #include "../include/utils.hpp"
 
 namespace Goblin {
+
+inline void free_id(struct ids &ids, const id_t id) { ids.m_free_ids.push(id); }
+
+id_t allocate_id(struct ids &ids) {
+    if (ids.m_free_ids.empty()) {
+        ids.m_biggest_allocated++;
+        return ids.m_biggest_allocated;
+    } else { // just repurpose a free used one
+        auto foo = ids.m_free_ids.front();
+        ids.m_free_ids.pop();
+        return foo;
+    }
+}
+
 bool find_file(const std::filesystem::path &directory, const std::string &filename, std::string &found_path) {
     for (const auto &entry : std::filesystem::recursive_directory_iterator(directory)) {
         if (entry.is_regular_file() && entry.path().filename() == filename) {
@@ -11,9 +25,7 @@ bool find_file(const std::filesystem::path &directory, const std::string &filena
     return false;
 }
 
-uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
-    return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE;
-}
+uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) { return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE; }
 
 Elf64_Addr page_align_down(const Elf64_Addr addr) { return addr & (~(PAGE_SIZE - 1)); }
 
@@ -23,7 +35,7 @@ unsigned long elf_hash(const unsigned char *name) {
 
     while (*name) {
         hash = (hash << 4) + *name++;
-        g    = hash & 0xF0000000;
+        g = hash & 0xF0000000;
         if (g != 0)
             hash ^= g >> 24;
         hash &= ~g;
@@ -41,4 +53,5 @@ unsigned long gnu_hash(const unsigned char *name) {
 
     return h;
 }
+
 } // namespace Goblin

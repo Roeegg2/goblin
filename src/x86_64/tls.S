@@ -6,14 +6,10 @@
 
 # rdi - receives TP (pointer to the TLS block)
 _goblin_tls_init_tp:
-	push %rbp
-	mov %rsp, %rbp
 	# systemd 64 ABI says first argument goes into %rdi
-	mov %rdi, %fs
+	wrfsbase %rdi
 	ret
 
 _goblin_tls_get_tp:
-	push %rbp
-	mov %rsp, %rbp
 	mov %fs, %rax
 	ret
