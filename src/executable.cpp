@@ -85,7 +85,7 @@ void Executable::run(void) {
         print_dynamic_segment();
     }
 #endif
-    std::cout << "\nStarting execution..." << std::endl;
+    std::cout << "\nStarting execution...\n" << std::endl;
     cleanup();
     // FIXME: get rid of not used anymore stuff
 

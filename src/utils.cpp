@@ -44,11 +44,11 @@ unsigned long elf_hash(const unsigned char *name) {
     return hash;
 }
 
-unsigned long gnu_hash(const unsigned char *name) {
-    unsigned long h = 5381;
+uint32_t gnu_hash(const uint8_t *name) {
+    uint32_t h = 5381;
 
-    for (unsigned char c = *name; c != '\0'; c = *++name) {
-        h = (h << 5) + h + c;
+    for (; *name; name++) {
+        h = (h << 5) + h + *name;
     }
 
     return h;

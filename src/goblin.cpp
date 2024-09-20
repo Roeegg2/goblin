@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
     /*int main(void) {*/
     options_t options = {
         .binding = BINDING_EAGER,
-        .symbol_resolution = SYMBOL_RESOLUTION_ELF_HASH,
+        .symbol_resolution = SYMBOL_RESOLUTION_OPTIMAL,
     };
     parse_options(argc, argv, options);
     Executable *executable = new Executable(argv[1], options);

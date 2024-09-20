@@ -49,19 +49,44 @@ Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     return nullptr;
 }
 
-// Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const { return nullptr; }
+Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const {
+    const uint32_t namehash = gnu_hash(reinterpret_cast<const unsigned char *>(sym_name));
+
+    uint64_t word = m_hash_data.bloom[(namehash / 64) % m_hash_data.bloom_size];
+    uint64_t mask = 0 | (uint64_t)1 << (namehash % 64) | (uint64_t)1 << ((namehash >> m_hash_data.bloom_shift) % 64);
+
+    if ((word & mask) != mask) {
+        return nullptr;
+    }
+
+    uint32_t symix = m_hash_data.buckets[namehash % m_hash_data.nbuckets];
+    if (symix < m_hash_data.symoffset) {
+        return nullptr;
+    }
+
+    while (true) {
+        const char *symname = m_dyn.str_table + m_dyn.sym_table[symix].st_name;
+        const uint32_t hash = m_hash_data.chains[symix - m_hash_data.symoffset];
+
+        if ((namehash | 1) == (hash | 1) && strcmp(sym_name, symname) == 0) {
+            return &m_dyn.sym_table[symix];
+        }
+
+        /* Chain ends with an element with the lowest bit set to 1. */
+        if (hash & 1) {
+            break;
+        }
+
+        symix++;
+    }
+
+    return nullptr;
+}
 
 Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
-    if (m_sht_indices.elf_hash == (uint16_t)(-1)) {
-        std::cerr << "Can't use ELF hash since no .hash section is found\n";
-        exit(1);
-    }
-    const auto hash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
-    const auto nbuckets = *(reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr));
-    const auto buckets = (reinterpret_cast<const uint32_t *>(m_sect_headers[m_sht_indices.elf_hash].sh_addr + m_load_base_addr) + 2);
-    const auto chains = (reinterpret_cast<const uint32_t *>(buckets) + nbuckets);
-
-    for (uint32_t i = buckets[hash % nbuckets]; i != STN_UNDEF; i = chains[i]) {
+    const uint32_t namehash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
+    // FIXME: might be more efficient to hash and then compare hashes?
+    for (uint32_t i = m_hash_data.buckets[namehash % m_hash_data.nbuckets]; i != STN_UNDEF; i = m_hash_data.chains[i]) {
         if (std::strcmp(m_dyn.str_table + m_dyn.sym_table[i].st_name, sym_name) == 0) {
             return m_dyn.sym_table + i;
         }
@@ -354,18 +379,41 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
 
 /* for anyone reading this in the future, I'm very sorry for this
  * mess...Hopefully you pull through :) */
-void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
+uint8_t Loadable::set_sym_lookup_method(void) {
+    if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_GNU_HASH, 1)) { // if user specified GNU hash
+        if (m_sht_indices.gnu_hash == (uint16_t)(-1)) {                                   // if no .gnu.hash section found
+            std::cerr << "WARNING: No .gnu.hash section found, trying ELF hash\n";
+            goto try_elf_hash;
+        }
+        f_lookup_dynsym =
+            std::bind(&Loadable::lookup_gnu_hash_dynsym, this, std::placeholders::_1); // otherwise, set GNU hash lookup method
+        return SYMBOL_RESOLUTION_GNU_HASH;
+    }
+    if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) { // if user specified ELF hash
+    try_elf_hash:
+        if (m_sht_indices.elf_hash == (uint16_t)(-1)) { // if no .hash section found
+            std::cerr << "WARNING: No .hash section found, trying symtab\n";
+            goto try_symtab;
+        }
+        f_lookup_dynsym = std::bind(&Loadable::lookup_elf_hash_dynsym, this, std::placeholders::_1); // set ELF hash lookup method
+        return SYMBOL_RESOLUTION_ELF_HASH;
+    }
+
+try_symtab:
+    f_lookup_dynsym = std::bind(&Loadable::lookup_regular_dynsym, this, std::placeholders::_1); // set symtab lookup method
+    return SYMBOL_RESOLUTION_SYMTAB;
+}
+
+void Loadable::apply_external_dyn_relocations(Loadable *dep) {
+    const uint8_t lookup_method = dep->set_sym_lookup_method();
+    dep->init_hash_tab_data(lookup_method);
+
     for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
         for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
             std::string org_sym_name =
-                extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of the symbol
-                                                                                                   //
-            Elf64_Sym *sym;
-            if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) {
-                sym = dep->lookup_elf_hash_dynsym(org_sym_name.c_str());
-            } else {
-                sym = dep->lookup_regular_dynsym(org_sym_name.c_str());
-            }
+                extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of original symbol
+
+            Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
 
             if (sym != nullptr) {
                 extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
@@ -374,6 +422,32 @@ void Loadable::apply_external_dyn_relocations(const Loadable *dep) {
                 exit(1);
             }
         }
+    }
+}
+
+void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
+    uint8_t index;
+    if (lookup_method == SYMBOL_RESOLUTION_SYMTAB) { // no data to read!
+        return;
+    }
+
+    // individual stuff
+    if (lookup_method == SYMBOL_RESOLUTION_GNU_HASH) {
+        index = m_sht_indices.gnu_hash;
+        m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
+        m_hash_data.symoffset = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
+        m_hash_data.bloom_size = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
+        m_hash_data.bloom_shift = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[3];
+        m_hash_data.bloom = &reinterpret_cast<uint64_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[4];
+        m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_hash_data.bloom)[m_hash_data.bloom_size];
+        m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
+
+    } else { // its ELF hash
+        index = m_sht_indices.elf_hash;
+        m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
+        m_hash_data.nchains = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
+        m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
+        m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
     }
 }
 

@@ -129,7 +129,7 @@ uint16_t ELF_File::get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) con
         }
     }
 
-	return 0;
+    return (uint16_t)(-1);
 }
 
 }; // namespace Goblin

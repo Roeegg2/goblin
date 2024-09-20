@@ -5,7 +5,9 @@
 #include "utils.hpp"
 
 #include <array>
+#include <cstdint>
 #include <elf.h>
+#include <functional>
 #include <memory>
 #include <queue>
 #include <set>
@@ -20,12 +22,28 @@ inline constexpr const auto BINDING_OPTIMAL = BINDING_LAZY;
 inline constexpr const auto SYMBOL_RESOLUTION_ELF_HASH = 0b00;
 inline constexpr const auto SYMBOL_RESOLUTION_GNU_HASH = 0b01;
 inline constexpr const auto SYMBOL_RESOLUTION_SYMTAB = 0b10;
-inline constexpr const auto SYMBOL_RESOLUTION_OPTIMAL = 0b11;
+inline constexpr const auto SYMBOL_RESOLUTION_OPTIMAL = SYMBOL_RESOLUTION_GNU_HASH;
 
 typedef struct {
     uint64_t binding : 1;
     uint64_t symbol_resolution : 2;
 } options_t;
+
+struct hash_tab_data {
+    // shared stuff
+    uint32_t nbuckets;
+    uint32_t *buckets;
+    uint32_t *chains;
+    // gnu hash specific
+    union {
+        uint32_t nchains;
+        uint32_t symoffset;
+    }; // could be grouped together so why not :)
+
+    uint32_t bloom_size;
+    uint32_t bloom_shift;
+    uint64_t *bloom;
+};
 
 struct tls {
     std::vector<struct tls_img> m_init_imgs;
@@ -97,7 +115,7 @@ class Loadable : public ELF_File {
     void apply_plt_rela_relocations(void);
     void apply_dyn_rela_relocations(void);
     void apply_dyn_relr_relocations(void);
-    void apply_external_dyn_relocations(const Loadable *dep);
+    void apply_external_dyn_relocations(Loadable *dep);
     void apply_tls_relocations(const id_t mod_id);
     void init_extern_relas(void);
 
@@ -107,6 +125,8 @@ class Loadable : public ELF_File {
     Elf64_Sym *lookup_regular_dynsym(const char *sym_name) const;
     Elf64_Sym *lookup_elf_hash_dynsym(const char *sym_name) const;
     Elf64_Sym *lookup_gnu_hash_dynsym(const char *sym_name) const;
+    uint8_t set_sym_lookup_method(void);
+    void init_hash_tab_data(const uint8_t lookup_method);
 
   protected:
     bool m_im_glibc;
@@ -136,6 +156,7 @@ class Loadable : public ELF_File {
         uint16_t gnu_hash = (uint16_t)(-1);
         uint16_t dynsym;
     } m_sht_indices;
+    struct hash_tab_data m_hash_data;
 
     std::set<Loadable *> m_dependencies;              // list of each dependency's Loadable object. only this object's m_dependencies
     std::array<struct extern_rela, 2> m_extern_relas; // indices of symbols that are needed from the external libraries
@@ -145,6 +166,8 @@ class Loadable : public ELF_File {
     // static Loadable &glibc_loadable;
     static std::vector<Loadable *> s_loaded_dependencies;
     static const char *s_DEFAULT_SHARED_OBJ_PATHS[];
+
+    std::function<Elf64_Sym *(const char *)> f_lookup_dynsym;
 };
 }; // namespace Goblin
 
