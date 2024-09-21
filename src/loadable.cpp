@@ -231,23 +231,20 @@ int Loadable::elf_perm_to_mmap_perms(const uint32_t elf_flags) {
     return mmap_flags;
 }
 
-uint32_t Loadable::get_total_page_count(void) const {
-    uint32_t total_page_count = 0;
-    for (int8_t i = 0; i < m_elf_header.e_phnum; i++) {
-        if ((m_prog_headers[i].p_type == PT_LOAD) && m_prog_headers[i].p_memsz > 0) {
-            total_page_count += get_page_count(m_prog_headers[i].p_memsz, m_prog_headers[i].p_vaddr);
-        }
-    }
-
-    return total_page_count;
-}
-
 void Loadable::alloc_mem_for_segments(void) {
-    m_load_base_addr = m_prog_headers[0].p_vaddr; // 0 for PIE, actual base address for non-PIE. that way
+    int8_t i = 0;
+    while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type != PT_LOAD))) {
+        i++;
+    }
+    m_load_base_addr = m_prog_headers[i].p_vaddr; // 0 for PIE, actual base address for non-PIE. that way
                                                   // mmap will allocate memory at the correct address (0
                                                   // means kernel will choose the address for us)
+    while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type == PT_LOAD))) {
+        i++;
+    }
+    uint32_t total_page_count =
+        get_page_count(m_prog_headers[i - 1].p_vaddr + m_prog_headers[i - 1].p_memsz - m_load_base_addr, m_load_base_addr) + 1;
 
-    uint32_t total_page_count = get_total_page_count();
     m_load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void *>(m_load_base_addr), total_page_count * PAGE_SIZE,
                                                          PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
@@ -269,8 +266,8 @@ void Loadable::setup_segment(const Elf64_Word i) {
 
     // As specified in the System V ABI, all data not mapped from file should be zeroed out
     if (m_prog_headers[i].p_filesz < m_prog_headers[i].p_memsz) {
-        memset(reinterpret_cast<void *>(m_prog_headers[i].p_vaddr + m_load_base_addr + m_prog_headers[i].p_filesz), 0,
-               m_prog_headers[i].p_memsz - m_prog_headers[i].p_filesz);
+        std::memset(reinterpret_cast<void *>(m_prog_headers[i].p_vaddr + m_load_base_addr + m_prog_headers[i].p_filesz), 0,
+                    m_prog_headers[i].p_memsz - m_prog_headers[i].p_filesz);
     }
 }
 
@@ -310,8 +307,7 @@ void Loadable::map_segments(struct tls *tls, const id_t mod_id) {
 
 void Loadable::set_correct_permissions(void) {
     for (int8_t i = 0; i < m_elf_header.e_phnum; i++) {
-        if (((m_prog_headers[i].p_type == PT_LOAD) && (m_prog_headers[i].p_memsz > 0)) || (m_prog_headers[i].p_type == PT_GNU_RELRO) ||
-            (m_prog_headers[i].p_type == PT_TLS)) {
+        if (((m_prog_headers[i].p_type == PT_LOAD) && (m_prog_headers[i].p_memsz > 0))) {
             if (m_prog_headers[i].p_memsz > 0) {
                 const uint16_t page_count = get_page_count(m_prog_headers[i].p_memsz, m_prog_headers[i].p_vaddr);
 

@@ -25,7 +25,16 @@ bool find_file(const std::filesystem::path &directory, const std::string &filena
     return false;
 }
 
-uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) { return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) / PAGE_SIZE; }
+// uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) { return (memsz + (addr % PAGE_SIZE) + PAGE_SIZE - 1) /
+// PAGE_SIZE; }
+
+uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
+    auto actual_size = memsz + (addr & (PAGE_SIZE - 1));
+    if (actual_size & (PAGE_SIZE - 1)) {
+        return (actual_size / PAGE_SIZE) + 1;
+    }
+    return actual_size / PAGE_SIZE;
+}
 
 Elf64_Addr page_align_down(const Elf64_Addr addr) { return addr & (~(PAGE_SIZE - 1)); }
 

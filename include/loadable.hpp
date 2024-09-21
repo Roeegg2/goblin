@@ -95,7 +95,6 @@ class Loadable : public ELF_File {
     void print_dynamic_segment(void) const;
     void print_dynamic_tag(const Elf64_Sxword tag) const;
 #endif
-    // bool find_file(const std::filesystem::path& directory, const std::string& filename, std::string& found_path);
     void build_shared_objs_tree(struct executable_shared &exec_shared);
 
   protected:
