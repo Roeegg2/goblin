@@ -24,14 +24,15 @@ const char *Loadable::s_DEFAULT_SHARED_OBJ_PATHS[]{
 };
 std::vector<Loadable *> Loadable::s_loaded_dependencies;
 
-Loadable::Loadable(const std::string file_path, const options_t options, const bool im_glibc)
-    : ELF_File(file_path), m_im_glibc(im_glibc), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr),
-      m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}) {
-
-    full_parse();
-    m_sht_indices.dynsym = get_sect_indice(SHT_DYNSYM);
-    m_sht_indices.elf_hash = get_sect_indice(SHT_HASH);
-    m_sht_indices.gnu_hash = get_sect_indice(SHT_GNU_HASH);
+Loadable::Loadable(const std::string file_path, const options_t options)
+    : ELF_File(file_path), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr), m_runpath(nullptr),
+      m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}),
+      m_sht_indices({get_section_index_by_type(SHT_DYNSYM), get_section_index_by_type(SHT_DYNSYM),
+                     get_section_index_by_type(SHT_DYNSYM)}) // ELF_File calls full_parse on contructor so there is not issue here
+{
+    m_sht_indices.dynsym = get_section_index_by_type(SHT_DYNSYM);
+    m_sht_indices.elf_hash = get_section_index_by_type(SHT_HASH);
+    m_sht_indices.gnu_hash = get_section_index_by_type(SHT_GNU_HASH);
     m_segment_data.reserve(m_elf_header.e_phnum);
 }
 
@@ -40,13 +41,7 @@ Loadable::~Loadable(void) {}
 Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     static const auto ent_num = m_sect_headers[m_sht_indices.dynsym].sh_size / m_sect_headers[m_sht_indices.dynsym].sh_entsize;
 
-    for (uint32_t i = 0; i < ent_num; i++) {
-        if (std::strcmp(m_dyn.str_table + m_dyn.sym_table[i].st_name, sym_name) == 0) {
-            return m_dyn.sym_table + i;
-        }
-    }
-
-    return nullptr;
+    return get_sym_by_name(m_dyn.sym_table, m_dyn.str_table, sym_name, ent_num);
 }
 
 Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const {
@@ -168,8 +163,7 @@ bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
         resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
         resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 
-        s_loaded_dependencies.push_back(
-            new Loadable(path.c_str(), m_options, std::strncmp(m_dyn.str_table + dt_needed, "libc.so", 6) == 0));
+        s_loaded_dependencies.push_back(new Loadable(path.c_str(), m_options));
         m_dependencies.insert(s_loaded_dependencies.back());
 
         return true;
@@ -184,8 +178,7 @@ inline void Loadable::construct_loadables_for_shared_objects(const std::set<Elf6
             continue;
         }
 
-        std::cerr << "Failed to resolve path for shared object: " << m_dyn.str_table + dt_needed << "\n";
-        exit(1);
+        _GOBLIN_PRINT_ERR("Failed to resolve path for shared object" << m_dyn.str_table + dt_needed);
     }
 }
 
@@ -232,25 +225,26 @@ int Loadable::elf_perm_to_mmap_perms(const uint32_t elf_flags) {
 }
 
 void Loadable::alloc_mem_for_segments(void) {
-    int8_t i = 0;
-    while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type != PT_LOAD))) {
-        i++;
-    }
-    m_load_base_addr = m_prog_headers[i].p_vaddr; // 0 for PIE, actual base address for non-PIE. that way
-                                                  // mmap will allocate memory at the correct address (0
-                                                  // means kernel will choose the address for us)
-    while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type == PT_LOAD))) {
-        i++;
-    }
-    uint32_t total_page_count =
-        get_page_count(m_prog_headers[i - 1].p_vaddr + m_prog_headers[i - 1].p_memsz - m_load_base_addr, m_load_base_addr) + 1;
+    {
+        int8_t i = 0;
+        while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type != PT_LOAD))) {
+            i++;
+        }
+        m_load_base_addr = m_prog_headers[i].p_vaddr; // 0 for PIE, actual base address for non-PIE. that way
+                                                      // mmap will allocate memory at the correct address (0
+                                                      // means kernel will choose the address for us)
+        while (((m_elf_header.e_phnum > i) && (m_prog_headers[i].p_type == PT_LOAD))) {
+            i++;
+        }
+        uint32_t total_page_count =
+            get_page_count(m_prog_headers[i - 1].p_vaddr + m_prog_headers[i - 1].p_memsz - m_load_base_addr, m_load_base_addr) + 1;
 
-    m_load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void *>(m_load_base_addr), total_page_count * PAGE_SIZE,
-                                                         PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+        m_load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void *>(m_load_base_addr), total_page_count * PAGE_SIZE,
+                                                             PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    }
 
     if (reinterpret_cast<void *>(m_load_base_addr) == MAP_FAILED) {
-        std::cerr << "mmap failed\n";
-        exit(1);
+        _GOBLIN_PRINT_ERR_INTERNAL("mmap failed")
     }
 
     if (m_elf_header.e_type == ET_EXEC)
@@ -313,8 +307,7 @@ void Loadable::set_correct_permissions(void) {
 
                 if (mprotect(reinterpret_cast<void *>(page_align_down(reinterpret_cast<Elf64_Addr>(m_segment_data[i]))),
                              page_count * PAGE_SIZE, elf_perm_to_mmap_perms(m_prog_headers[i].p_flags)) == -1) {
-                    std::cerr << "mprotect failed\n";
-                    exit(1);
+                    _GOBLIN_PRINT_ERR_INTERNAL("mprotect failed")
                 }
             }
         }
@@ -349,8 +342,20 @@ void Loadable::init_extern_relas(void) {
 
 void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     const id_t mod_id = allocate_id(exec_shared.m_mod_ids);
+    {
+        // NOTE: not sure if I should use the filename or the full path
+        auto res = m_elf_file_path.generic_string().find("libc.so");
+        // auto res = m_elf_file_path.filename().generic_string().find("libc.so");
 
-    std::cout << "Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id << " \n";
+        if (res != std::string::npos) { // if this is glibc
+            if (exec_shared.m_glibc_modid != 0) {
+                _GOBLIN_PRINT_WARN("Loaded glibc multiple times, something probably went wrong");
+            }
+            exec_shared.m_glibc_modid = mod_id;
+        }
+    }
+
+    _GOBLIN_PRINT_INFO("Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id);
 
     map_segments(&exec_shared.m_tls, mod_id);
     if (m_dyn_seg_index >= 0) {
@@ -378,7 +383,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
 uint8_t Loadable::set_sym_lookup_method(void) {
     if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_GNU_HASH, 1)) { // if user specified GNU hash
         if (m_sht_indices.gnu_hash == (uint16_t)(-1)) {                                   // if no .gnu.hash section found
-            std::cerr << "WARNING: No .gnu.hash section found, trying ELF hash\n";
+            _GOBLIN_PRINT_WARN("No .gnu.hash section found, trying ELF hash");
             goto try_elf_hash;
         }
         f_lookup_dynsym =
@@ -388,7 +393,7 @@ uint8_t Loadable::set_sym_lookup_method(void) {
     if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) { // if user specified ELF hash
     try_elf_hash:
         if (m_sht_indices.elf_hash == (uint16_t)(-1)) { // if no .hash section found
-            std::cerr << "WARNING: No .hash section found, trying symtab\n";
+            _GOBLIN_PRINT_WARN("No .hash section found, trying symtab");
             goto try_symtab;
         }
         f_lookup_dynsym = std::bind(&Loadable::lookup_elf_hash_dynsym, this, std::placeholders::_1); // set ELF hash lookup method
@@ -414,8 +419,7 @@ void Loadable::apply_external_dyn_relocations(Loadable *dep) {
             if (sym != nullptr) {
                 extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
             } else {
-                std::cerr << "Symbol not found: " << org_sym_name << "\n";
-                exit(1);
+                _GOBLIN_PRINT_WARN("Symbol not found: " << org_sym_name);
             }
         }
     }
@@ -483,14 +487,11 @@ void Loadable::apply_plt_rela_relocations(void) {
                 m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
                 break;
             case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
-                                     /*if (!m_im_glibc) {*/
                 *addr =
                     reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_plt.rela.m_addr[i].r_addend + m_load_base_addr)());
-                /*}*/
                 break;
             default:
-                std::cerr << "PLT Unknown relocation type: " << std::dec << ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info) << "\n";
-                exit(1);
+                _GOBLIN_PRINT_WARN("PLT Unknown relocation type: " << std::dec << ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info));
             }
         }
     }
@@ -527,10 +528,7 @@ void Loadable::apply_dyn_rela_relocations(void) {
             m_extern_relas[ExternRelasIndices::REL_COPY].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
         case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
-            if (!m_im_glibc) {
-                *addr =
-                    reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
-            }
+            *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
             break;
         case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
             m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].m_syms.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
@@ -541,8 +539,7 @@ void Loadable::apply_dyn_rela_relocations(void) {
             m_tls_relas.insert(i);
             break;
         default:
-            std::cerr << "Unknown relocation type: " << std::dec << ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info) << "\n";
-            exit(1);
+            _GOBLIN_PRINT_WARN("Unknown relocation type number: " << std::dec << ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info));
         }
     }
 }

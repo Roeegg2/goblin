@@ -1,16 +1,21 @@
 #include "../include/elf_file.hpp"
 
+#include <cstdint>
 #include <elf.h>
 
 #include <cstring>
 #include <iostream>
 
 namespace Goblin {
-ELF_File::ELF_File(const std::string file_path) : m_elf_file_path(file_path) {
+ELF_File::ELF_File(const std::string file_path, const bool full_parse_now) : m_elf_file_path(file_path) {
     m_elf_file.open(file_path, std::ios::binary);
     if (!m_elf_file.is_open()) {
         std::cerr << "Failed to open ELF file\n";
         exit(1);
+    }
+
+    if (full_parse_now) {
+        full_parse();
     }
 }
 
@@ -18,12 +23,16 @@ ELF_File::~ELF_File(void) {
     m_elf_file.close();
     delete[] m_prog_headers;
     delete[] m_sect_headers;
+    delete[] m_shstrtab;
 }
 
 void ELF_File::full_parse(void) {
     parse_elf_header();
     parse_prog_headers();
     parse_sect_headers();
+
+    m_elf_file.seekg(m_sect_headers[m_elf_header.e_shstrndx].sh_offset);
+    m_elf_file.read(m_shstrtab, m_sect_headers[m_elf_header.e_shstrndx].sh_size);
 }
 
 inline void ELF_File::check_elf_header_magic(void) { // sizeof(ELFMAG)
@@ -120,9 +129,13 @@ void ELF_File::parse_sect_headers(void) {
         m_elf_file.read(reinterpret_cast<char *>(&m_sect_headers[i].sh_entsize),
                         8); // size of each entry if section holds a table
     }
+
+    m_shstrtab =
+        new char[m_sect_headers[m_elf_header.e_shstrndx].sh_size]; // currently isnt used by anyone other than Executable when setting up
+                                                                   // main args, but it might be used in the future in loadables too i guess
 }
 
-uint16_t ELF_File::get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) const {
+uint16_t ELF_File::get_section_index_by_type(const decltype(Elf64_Shdr::sh_type) type) const {
     for (uint16_t i = 0; i < m_elf_header.e_shnum; i++) {
         if (m_sect_headers[i].sh_type == type) {
             return i;
@@ -132,4 +145,36 @@ uint16_t ELF_File::get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) con
     return (uint16_t)(-1);
 }
 
+Elf64_Word ELF_File::get_section_st_name_by_name(const char *name) const {
+    char *shstrtab = m_shstrtab + 1;
+    for (uint16_t i = 0; i < m_elf_header.e_shnum; i++) {
+        if (std::strcmp(name, shstrtab) == 0) {
+            return shstrtab - m_shstrtab;
+        }
+        shstrtab += std::strlen(shstrtab) + 1;
+    }
+
+    return (uint16_t)(-1);
+}
+
+uint16_t ELF_File::get_section_index_by_name(const char *name) const { // OPT: check byte-byte instead of having to call strcmp and strlen
+    Elf64_Word st_name = get_section_st_name_by_name(name);
+    for (uint16_t i = 0; i < m_elf_header.e_shnum; i++) {
+        if (m_sect_headers[i].sh_name == st_name) {
+            return i;
+        }
+    }
+
+    return (uint16_t)(-1);
+}
+
+Elf64_Sym *ELF_File::get_sym_by_name(Elf64_Sym *symtab, const char *strtab, const char *sym_name, const uint32_t ent_num) const {
+    for (uint32_t i = 0; i < ent_num; i++) {
+        if (std::strcmp(strtab + symtab[i].st_name, sym_name) == 0) {
+            return symtab + i;
+        }
+    }
+
+    return nullptr;
+}
 }; // namespace Goblin

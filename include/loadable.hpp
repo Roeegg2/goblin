@@ -16,6 +16,7 @@
 
 namespace Goblin {
 class Loadable;
+// should i use inline here?
 inline constexpr const auto BINDING_EAGER = 0b0;
 inline constexpr const auto BINDING_LAZY = 0b1;
 inline constexpr const auto BINDING_OPTIMAL = BINDING_LAZY;
@@ -51,6 +52,7 @@ struct tls {
 };
 
 struct executable_shared {
+    id_t m_glibc_modid = 0; // no ID can be 0 so we can mark 0 as unset (TLS modids start from 1)
     struct ids m_mod_ids;
     struct tls m_tls;
 }; // stuff shared between the executable and it's loaded shared objects
@@ -89,7 +91,7 @@ enum ExternRelasIndices : uint8_t {
 
 class Loadable : public ELF_File {
   public:
-    Loadable(const std::string file_path, const options_t options, const bool im_glibc = false);
+    Loadable(const std::string file_path, const options_t options);
     ~Loadable();
 #ifdef DEBUG
     void print_dynamic_segment(void) const;
@@ -128,7 +130,6 @@ class Loadable : public ELF_File {
     void init_hash_tab_data(const uint8_t lookup_method);
 
   protected:
-    bool m_im_glibc;
     options_t m_options;
     int16_t m_dyn_seg_index;
     int16_t m_tls_seg_index;
@@ -151,8 +152,8 @@ class Loadable : public ELF_File {
     } m_plt;
 
     struct {
-        uint16_t elf_hash = (uint16_t)(-1);
-        uint16_t gnu_hash = (uint16_t)(-1);
+        uint16_t gnu_hash;
+        uint16_t elf_hash;
         uint16_t dynsym;
     } m_sht_indices;
     struct hash_tab_data m_hash_data;

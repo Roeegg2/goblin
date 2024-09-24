@@ -1,6 +1,7 @@
 #ifndef GOBLIN_ELF_FILE_HPP
 #define GOBLIN_ELF_FILE_HPP
 
+#include <cstdint>
 #include <elf.h>
 #include <filesystem>
 #include <fstream>
@@ -8,7 +9,7 @@
 namespace Goblin {
 class ELF_File {
   public:
-    ELF_File(const std::string file_path);
+    ELF_File(const std::string file_path, const bool full_parse_now = true);
     ~ELF_File(void);
     void full_parse(void);
     void parse_elf_header(void);
@@ -30,12 +31,15 @@ class ELF_File {
     void print_symtab(void) const;
 #endif
   protected:
-	uint16_t get_sect_indice(const decltype(Elf64_Shdr::sh_type) type) const; 
+    uint16_t get_section_index_by_type(const decltype(Elf64_Shdr::sh_type) type) const;
+    uint16_t get_section_index_by_name(const char *name) const;
+    Elf64_Sym *get_sym_by_name(Elf64_Sym *symtab, const char *strtab, const char *sym_name, const uint32_t ent_num) const;
 
   private:
     inline void check_elf_header_magic(void);
     inline void check_elf_header_class(void);
     void read_elf_header_data(void *data, const uint8_t bytes, const int32_t offset = -1);
+    Elf64_Word get_section_st_name_by_name(const char *name) const;
 
   protected:
     std::filesystem::path m_elf_file_path;
@@ -44,6 +48,8 @@ class ELF_File {
     Elf64_Ehdr m_elf_header;
     Elf64_Phdr *m_prog_headers;
     Elf64_Shdr *m_sect_headers;
+
+    char *m_shstrtab;
 };
 }; // namespace Goblin
 

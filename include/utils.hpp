@@ -6,6 +6,16 @@
 #include <queue>
 #include <string>
 
+// TODO: change these to std::cerr, and figure out the issue
+#define _GOBLIN_PRINT_WARN(msg) std::cout << "[WARNING] " << msg << "\n";
+#define _GOBLIN_PRINT_INFO(msg) std::cout << "[INFO] " << msg << std::endl;
+#define _GOBLIN_PRINT_ERR(msg)                                                                                                             \
+    std::cout << "[ERROR] " << msg << "\n";                                                                                                \
+    exit(1);
+#define _GOBLIN_PRINT_ERR_INTERNAL(msg)                                                                                                    \
+    std::cout << "[INTERNAL ERROR] " << msg << "\n";                                                                                       \
+    exit(1);
+
 namespace Goblin {
 typedef Elf64_Word id_t;
 
