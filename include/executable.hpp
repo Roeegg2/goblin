@@ -23,6 +23,8 @@ class Executable final : public Loadable {
     void allocate_tid(id_t &tid);
     void init_thread_static_tls(void);
     void setup_args_for_start(int exec_argc, char **exec_argv);
+    uint16_t get_env_count(int argc, char **exec_argv);
+    void setup_auxv(Elf64_auxv_t *auxv);
     void (*get_main(void))(int, char **, char **);
 
   public:
