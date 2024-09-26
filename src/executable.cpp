@@ -12,17 +12,22 @@
 /*prefix Goblin internal assembly functions (to avoid naming collision with
  * other libraries and stuff)*/
 #define _GOBLIN_GI(sym) _goblin_##sym
-
 #define _GOBLIN__START (reinterpret_cast<void (*)(void)>(m_load_base_addr + m_elf_header.e_entry))
+#define _GOBLIN_SET_AUXV_ENT(type, value)                                                                                                  \
+    auxv[type].a_un.a_val = value;                                                                                                         \
+    auxv[type].a_type = type;
 
 extern "C" {
 void _GOBLIN_GI(tls_init_tp)(void *tp);
 void *_GOBLIN_GI(tls_get_tp)(void);
 
-__attribute((noreturn)) void _GOBLIN_GI(call__start)(int argc, char **argv, void *atexit, void (*_start)(void), uint16_t total_length);
+__attribute__((noreturn)) void _GOBLIN_GI(call__start)(int argc, char **argv, void *atexit, void (*_start)(void), uint16_t total_length);
 }
 
 namespace Goblin {
+
+uint64_t _dl_random = 0xabcdabcd;
+
 Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path, options) {
     m_sect_indices.strtab = get_section_index_by_name(".strtab");
     m_sect_indices.symtab = get_section_index_by_name(".symtab");
@@ -105,48 +110,29 @@ void (*Executable::get_main(void))(int, char **, char **) {
     return reinterpret_cast<void (*)(int, char **, char **)>(main_sym->st_value + m_load_base_addr);
 }
 
-// looping over the environment variables, getting the last entry
-uint16_t Executable::get_env_count(int argc, char **exec_argv) {
-    char **env = exec_argv + argc + 1;
-    for (; *(env) != NULL; env++) {
-        std::cout << *env << std::endl;
-    }
-
-    return env - (exec_argv + argc + 1);
-}
-
 void Executable::setup_auxv(Elf64_auxv_t *auxv) {
-    auxv[AT_NULL].a_un.a_val = 0;                                            // end of vector
-    auxv[AT_EXECFD].a_un.a_val = -1;                                         // file descriptor of program
-    auxv[AT_PHDR].a_un.a_val = reinterpret_cast<Elf64_Addr>(m_prog_headers); // program headers for
-    auxv[AT_PHENT].a_un.a_val = m_elf_header.e_phentsize;                    // size of program header entry
-    auxv[AT_PHNUM].a_un.a_val = m_elf_header.e_phnum;                        // number of program headers
-    auxv[AT_PAGESZ].a_un.a_val = PAGE_SIZE;                                  // system page size
-    auxv[AT_BASE].a_un.a_val = 0;                                            // base address of interpreter
-    auxv[AT_FLAGS].a_un.a_val = 0;                                           // flags
-    auxv[AT_ENTRY].a_un.a_val = m_elf_header.e_entry + m_load_base_addr;     // entry point of program
-    auxv[AT_NOTELF].a_un.a_val = 0;                                          // program is not ELF
-    auxv[AT_UID].a_un.a_val = getuid();                                      // real uid
-    auxv[AT_EUID].a_un.a_val = geteuid();                                    // effective uid
-    auxv[AT_GID].a_un.a_val = getgid();                                      // real gid
-    auxv[AT_EGID].a_un.a_val = getegid();                                    // effective gid
-    auxv[AT_CLKTCK].a_un.a_val = sysconf(_SC_CLK_TCK);                       // frequency of times()
+    _GOBLIN_SET_AUXV_ENT(AT_NULL, 0xdeadbeef);
+    _GOBLIN_SET_AUXV_ENT(AT_IGNORE, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_EXECFD, -1);
+    _GOBLIN_SET_AUXV_ENT(AT_PHDR, reinterpret_cast<Elf64_Addr>(m_prog_headers));
+    _GOBLIN_SET_AUXV_ENT(AT_PHENT, m_elf_header.e_phentsize);
+    _GOBLIN_SET_AUXV_ENT(AT_PHNUM, m_elf_header.e_phnum);
+    _GOBLIN_SET_AUXV_ENT(AT_PAGESZ, PAGE_SIZE);
+    _GOBLIN_SET_AUXV_ENT(AT_BASE, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_FLAGS, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_ENTRY, m_elf_header.e_entry + m_load_base_addr);
+    _GOBLIN_SET_AUXV_ENT(AT_NOTELF, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_UID, getuid());
+    _GOBLIN_SET_AUXV_ENT(AT_EUID, geteuid());
+    _GOBLIN_SET_AUXV_ENT(AT_GID, getgid());
+    _GOBLIN_SET_AUXV_ENT(AT_EGID, getegid());
+    _GOBLIN_SET_AUXV_ENT(AT_CLKTCK, sysconf(_SC_CLK_TCK));
+    _GOBLIN_SET_AUXV_ENT(AT_PLATFORM, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_HWCAP, 0);
+    _GOBLIN_SET_AUXV_ENT(AT_SECURE, 1);
+    _GOBLIN_SET_AUXV_ENT(AT_RANDOM, reinterpret_cast<Elf64_Addr>(&_dl_random));
 
-    // Some more special a_type values describing the hardware.
-    auxv[AT_PLATFORM].a_un.a_val = 0; // string identifying platform
-    auxv[AT_HWCAP].a_un.a_val = 0;    // machine-dependent hints about processor capabilities
-
-    // This entry gives some information about the FPU initialization
-    // performed by the kernel.
-    auxv[AT_FPUCW].a_un.a_val = 0; // used FPU control word
-
-    // Cache block sizes.
-    auxv[AT_DCACHEBSIZE].a_un.a_val = 0; // data cache block size
-    auxv[AT_ICACHEBSIZE].a_un.a_val = 0; // instruction cache block size
-    auxv[AT_UCACHEBSIZE].a_un.a_val = 0; // unified cache block size
-
-    // NOTE: remove later on. doing this to skip __tunables_init shit
-    auxv[AT_SECURE].a_un.a_val = 0;
+    std::cout << "_dl_random address is: " << &_dl_random << std::endl;
 }
 
 void Executable::run(int exec_argc, char **exec_argv) {
@@ -160,24 +146,18 @@ void Executable::run(int exec_argc, char **exec_argv) {
 #endif
     cleanup();
     // FIXME: get rid of not used anymore stuff
+    {
 
-    const uint16_t total_length = exec_argc + 1 + get_env_count(exec_argc, exec_argv) + 1;
-    Elf64_auxv_t *auxv = reinterpret_cast<Elf64_auxv_t *>(exec_argv + total_length - 1);
-    setup_auxv(auxv);
+        char **env = exec_argv + exec_argc + 1;
+        for (; *(env) != NULL; env++) {
+            // std::cout << *env << std::endl;
+        }
 
-    // moving params to _start as specified in start.S
-    // asm volatile("movq %0, %%rdi\n\t"
-    //              "movl %1, %%esi\n\t"
-    //              "movq %2, %%rdx\n\t"
-    //              "movq %3, %%rcx\n\t"
-    //              "movq %4, %%r8\n\t"
-    //              "movq %5, %%r9\n\t"
-    //              "pushq %6\n\t"
-    //              "jmpq *%7\n\t"
-    //              : /* no output */
-    //              : "r"(get_main()), "r"(exec_argc), "r"(exec_argv), "r"(NULL), "r"(NULL), "r"(NULL), "r"(NULL), "r"(_GOBLIN__START)
-    //              : "rdi", "rsi", "rdx", "rcx", "r8", "r9", "memory");
+        auto env_count = env - (exec_argv + exec_argc + 1);
+        Elf64_auxv_t *auxv = reinterpret_cast<Elf64_auxv_t *>(env + env_count + 1);
+        setup_auxv(auxv);
 
-    _GOBLIN_GI(call__start)(exec_argc, exec_argv, NULL, _GOBLIN__START, total_length);
+        _GOBLIN_GI(call__start)(exec_argc, exec_argv, NULL, _GOBLIN__START, exec_argc + 1 + env_count + 1 + AT_MINSIGSTKSZ + 1);
+    }
 }
 }; // namespace Goblin

@@ -9,15 +9,18 @@
 # rsi - argv
 # rdx - atexit shit
 # rcx - address of _start
-# r8 - total amount to push (argc + 1(argv NULL) + cenvp(envp entries amount) + 1(envp NULL)) 
+# r8 - total amount to push
 
 # rax - main looper
 _goblin_call__start:
+	# push garbage
+	push %rax 
 _goblin_start_push_loop:
 	push (%rsi, %r8, 8)
 	dec %r8
 	test %r8, %r8
 	jne _goblin_start_push_loop
+	push %rdi
 	jmp *%rcx
 
 
