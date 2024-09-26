@@ -46,6 +46,14 @@ struct hash_tab_data {
     uint64_t *bloom;
 };
 
+struct tls_img {
+    Elf64_Word m_module_id;
+    Elf64_Xword m_size;
+    void *m_data;
+    Elf64_Off m_tlsoffset;
+    bool m_is_static_model;
+};
+
 struct tls {
     std::vector<struct tls_img> m_init_imgs;
     Elf64_Off m_total_imgs_size;
@@ -73,14 +81,6 @@ struct extern_rela {
     std::string (*f_construct_name)(const char *, const Elf64_Word);
     void (*f_apply_relocation)(Loadable *self, const Loadable *dep, const Elf64_Word sym_index, const uint32_t i);
     std::set<Elf64_Word> m_syms;
-};
-
-struct tls_img {
-    Elf64_Word m_module_id;
-    Elf64_Xword m_size;
-    void *m_data;
-    Elf64_Off m_tlsoffset;
-    bool m_is_static_model;
 };
 
 // would've used enum class but it's not possible to use it as an index in an array...

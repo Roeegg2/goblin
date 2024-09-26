@@ -102,6 +102,7 @@ void Executable::cleanup() { return; }
 void (*Executable::get_main(void))(int, char **, char **) {
     Elf64_Sym *main_sym = get_sym_by_name(
         m_symtab, m_strtab, "main", (m_sect_headers[m_sect_indices.symtab].sh_size / m_sect_headers[m_sect_indices.symtab].sh_entsize));
+
     if (main_sym == nullptr) {
         _GOBLIN_PRINT_WARN("Couldn't find \'main\' function. This should be concerning if program is using glibc\n");
         return nullptr;
