@@ -1,11 +1,11 @@
 #ifndef GOBLIN_EXECUTABLE_HPP
 #define GOBLIN_EXECUTABLE_HPP
 
+#include "_gnu_tls.hpp"
 #include "loadable.hpp"
 
 #include <cstdint>
 #include <elf.h>
-#include <queue>
 
 namespace Goblin {
 typedef struct {
@@ -13,15 +13,11 @@ typedef struct {
     unsigned long int ti_offset;
 } tls_index;
 
-struct tcb {
-    void *tp; // thread pointer (%fs register)
-    id_t tid; // thread id
-};
-
 class Executable final : public Loadable {
   private:
-    void allocate_tid(id_t &tid);
-    void init_thread_static_tls(void);
+    id_t init_tcb(void *tp);
+    void allocate_dtv(const id_t tid);
+    void *init_thread_static_tls(void);
     void setup_args_for_start(int exec_argc, char **exec_argv);
     uint16_t get_env_count(int argc, char **exec_argv);
     void setup_auxv(Elf64_auxv_t *auxv);
@@ -39,9 +35,7 @@ class Executable final : public Loadable {
     struct ids tids;
     struct executable_shared m_exec_shared;
 
-    std::vector<struct tcb> m_tcbs;
-    std::vector<std::vector<void *>> dtvs;
-    struct tls m_tls;
+    std::vector<tcbhead_t *> m_tcbs;
 
     struct {
         uint16_t strtab;

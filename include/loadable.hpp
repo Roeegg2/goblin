@@ -8,10 +8,7 @@
 #include <cstdint>
 #include <elf.h>
 #include <functional>
-#include <memory>
-#include <queue>
 #include <set>
-#include <unordered_map>
 #include <vector>
 
 namespace Goblin {

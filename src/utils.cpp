@@ -9,7 +9,7 @@ id_t allocate_id(struct ids &ids) {
         ids.m_biggest_allocated++;
         return ids.m_biggest_allocated;
     } else { // just repurpose a free used one
-        auto foo = ids.m_free_ids.front();
+        id_t foo = ids.m_free_ids.front();
         ids.m_free_ids.pop();
         return foo;
     }

@@ -7,7 +7,6 @@
 #include <elf.h>
 #include <fcntl.h>
 #include <iostream>
-#include <memory>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -279,7 +278,7 @@ void Loadable::map_segments(struct tls *tls, const id_t mod_id) {
             tls->m_init_imgs.push_back({.m_module_id = mod_id, // FIXME: might need to change this if there are cases
                                                                // where the module ID is decided upon at compile/linktime
                                         .m_size = m_prog_headers[i].p_memsz,
-                                        .m_data = m_segment_data[i],
+                                        .m_data = &m_segment_data[i],
                                         .m_tlsoffset = tls->m_total_imgs_size,
                                         .m_is_static_model = true});
             tls->m_total_imgs_size += m_prog_headers[i].p_memsz;
