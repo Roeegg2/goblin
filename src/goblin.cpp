@@ -9,40 +9,7 @@ using namespace Goblin;
 
 #define _GOBLIN_USUAGE " Usage: ./goblin <executable> [-b=<eager|lazy>][-sr=<elf-hash|gnu-hash|symtab|optimal>]"
 static uint16_t parse_options(const int argc, char **argv, __attribute__((unused)) options_t &options) {
-    // auto parse_binding = [&](const char *binding) {
-    //     if (std::strcmp(binding, "eager") == 0) {
-    //         options.binding = BINDING_EAGER;
-    //     } else if (std::strcmp(binding, "lazy") == 0) {
-    //         options.binding = BINDING_LAZY;
-    //     } else {
-    //
-    //         _GOBLIN_PRINT_ERR("Invalid binding option: " << binding << _GOBLIN_USUAGE);
-    //     }
-    // };
-    //
-    // auto parse_symbol_resolution = [&](const char *symbol_resolution) {
-    //     if (std::strcmp(symbol_resolution, "elf-hash") == 0) {
-    //         options.symbol_resolution = SYMBOL_RESOLUTION_ELF_HASH;
-    //     } else if (std::strcmp(symbol_resolution, "gnu-hash") == 0) {
-    //         options.symbol_resolution = SYMBOL_RESOLUTION_GNU_HASH;
-    //     } else if (std::strcmp(symbol_resolution, "symtab") == 0) {
-    //         options.symbol_resolution = SYMBOL_RESOLUTION_SYMTAB;
-    //     } else {
-    //         _GOBLIN_PRINT_ERR("Invalid symbol resolution option: " << symbol_resolution << _GOBLIN_USUAGE);
-    //     }
-    // };
-
-    // int i = 0;
-    // for (; (i < argc - 2) && (i < 3); i++) {
-    //     if (std::strstr(argv[i], "-b=") == argv[i]) {
-    //         parse_binding(argv[i] + 3);
-    //     } else if (std::strstr(argv[i], "-sr=") == argv[i]) {
-    //         parse_symbol_resolution(argv[i] + 4);
-    //     } else {
-    //         _GOBLIN_PRINT_ERR("Invalid option: " << argv[i] << _GOBLIN_USUAGE);
-    //     }
-    // }
-
+    // TODO: add support for options
     if (argc < 2) {
         _GOBLIN_PRINT_ERR("No executable provided" << _GOBLIN_USUAGE);
     }

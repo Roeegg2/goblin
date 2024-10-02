@@ -2,15 +2,15 @@
 
 namespace Goblin {
 
-inline void free_id(struct ids &ids, const id_t id) { ids.m_free_ids.push(id); }
+inline void IDs::free_id(const id_t id) { m_free_ids.push(id); }
 
-id_t allocate_id(struct ids &ids) {
-    if (ids.m_free_ids.empty()) {
-        ids.m_biggest_allocated++;
-        return ids.m_biggest_allocated;
+id_t IDs::allocate_id() {
+    if (m_free_ids.empty()) {
+        m_biggest_allocated++;
+        return m_biggest_allocated;
     } else { // just repurpose a free used one
-        id_t foo = ids.m_free_ids.front();
-        ids.m_free_ids.pop();
+        id_t foo = m_free_ids.front();
+        m_free_ids.pop();
         return foo;
     }
 }

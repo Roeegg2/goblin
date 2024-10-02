@@ -8,11 +8,6 @@
 #include <elf.h>
 
 namespace Goblin {
-typedef struct {
-    unsigned long int ti_module;
-    unsigned long int ti_offset;
-} tls_index;
-
 class Executable final : public Loadable {
   private:
     id_t init_tcb(void *tp);
@@ -32,7 +27,6 @@ class Executable final : public Loadable {
     void *__tls_get_addr(tls_index *ti);
 
   private:
-    struct ids tids;
     struct executable_shared m_exec_shared;
 
     std::vector<tcbhead_t *> m_tcbs;

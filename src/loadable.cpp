@@ -314,8 +314,12 @@ void Loadable::set_correct_permissions(void) {
 }
 
 void Loadable::init_extern_relas(void) {
-    auto construct_name_copy = [](const char *str_table, const Elf64_Word sym_name) { return std::string(str_table + sym_name); };
-    auto construct_name_jumps_globd = [](const char *str_table, const Elf64_Word sym_name) {
+#define _GOBLIN_CONSTRUCT_NAME_LAMBDA(suffix) auto construct_name_##suffix = [](const char *str_table, const Elf64_Word sym_name)
+#define _GOBLIN_APPLY_RELOCATION_LAMBDA(suffix)                                                                                            \
+    auto apply_relocation_##suffix = [](Loadable * self, const Loadable *dep, const Elf64_Word self_i, const uint32_t dep_i)
+
+    _GOBLIN_CONSTRUCT_NAME_LAMBDA(copy) { return std::string(str_table + sym_name); };
+    _GOBLIN_CONSTRUCT_NAME_LAMBDA(jumps_globd) {
         std::string ret = str_table + sym_name;
         const size_t pos = ret.find('@');
         if (pos != std::string::npos) {
@@ -323,40 +327,59 @@ void Loadable::init_extern_relas(void) {
         }
         return ret;
     };
-    auto apply_relocation_copy = [](Loadable *self, const Loadable *dep, const Elf64_Word sym_index, const uint32_t i) {
-        char *src = reinterpret_cast<char *>(self->m_dyn.sym_table[sym_index].st_value + self->m_load_base_addr);
-        const char *dst = reinterpret_cast<const char *>(dep->m_dyn.sym_table[i].st_value + dep->m_load_base_addr);
+    _GOBLIN_CONSTRUCT_NAME_LAMBDA(tls_dtpmod64) { return std::string(str_table + sym_name); };
+
+    _GOBLIN_APPLY_RELOCATION_LAMBDA(copy) {
+        char *src = reinterpret_cast<char *>(self->m_dyn.sym_table[self_i].st_value + self->m_load_base_addr);
+        const char *dst = reinterpret_cast<const char *>(dep->m_dyn.sym_table[dep_i].st_value + dep->m_load_base_addr);
         std::strcpy(src, dst);
     };
-    auto apply_relocation_jumps_globd = [](Loadable *self, const Loadable *dep, const Elf64_Word sym_index, const uint32_t i) {
-        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(self->m_dyn.rela.m_addr[sym_index].r_offset + self->m_load_base_addr);
-        *addr = dep->m_dyn.sym_table[i].st_value + dep->m_load_base_addr + dep->m_dyn.rela.m_addr[i].r_addend;
+    _GOBLIN_APPLY_RELOCATION_LAMBDA(jumps_globd) {
+        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(self->m_dyn.rela.m_addr[self_i].r_offset +
+                                                          self->m_load_base_addr); // get address where we need to apply relocation
+        *addr = dep->m_dyn.sym_table[dep_i].st_value + dep->m_load_base_addr +
+                dep->m_dyn.rela.m_addr[dep_i].r_addend; // apply relocation - symbol value is an address
     };
+    _GOBLIN_APPLY_RELOCATION_LAMBDA(tls_dtpmod64) {
+        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(self->m_dyn.rela.m_addr[self_i].r_offset +
+                                                          self->m_load_base_addr); // get address where we need to apply relocation
+        *addr = dep_i;                                                             // in this case, dep_i is the module ID
+    };
+
+#undef _GOBLIN_CONSTRUCT_NAME_LAMBDA
+#undef _GOBLIN_APPLY_RELOCATION_LAMBDA
 
     m_extern_relas[ExternRelasIndices::REL_COPY].f_construct_name = construct_name_copy;
     m_extern_relas[ExternRelasIndices::REL_COPY].f_apply_relocation = apply_relocation_copy;
     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_construct_name = construct_name_jumps_globd;
     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_apply_relocation = apply_relocation_jumps_globd;
+    m_extern_relas[ExternRelasIndices::REL_TLS_DTPMOD64].f_construct_name = construct_name_tls_dtpmod64;
+    m_extern_relas[ExternRelasIndices::REL_TLS_DTPMOD64].f_apply_relocation = apply_relocation_tls_dtpmod64;
+}
+
+void Loadable::handle_if_module_is_glibc(struct executable_shared &exec_shared, const id_t mod_id) const {
+    // NOTE: not sure if I should use the filename or the full path
+    auto res = m_elf_file_path.generic_string().find("libc.so");
+    // auto res = m_elf_file_path.filename().generic_string().find("libc.so");
+
+    if (res != std::string::npos) { // if this is glibc
+        if (exec_shared.m_glibc_modid != 0) {
+            _GOBLIN_PRINT_WARN("Loaded glibc multiple times, something probably went wrong");
+        }
+        exec_shared.m_glibc_modid = mod_id;
+    }
 }
 
 void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
-    const id_t mod_id = allocate_id(exec_shared.m_mod_ids);
     {
-        // NOTE: not sure if I should use the filename or the full path
-        auto res = m_elf_file_path.generic_string().find("libc.so");
-        // auto res = m_elf_file_path.filename().generic_string().find("libc.so");
+        const id_t mod_id = exec_shared.m_mod_ids.allocate_id();
+        handle_if_module_is_glibc(exec_shared, mod_id);
 
-        if (res != std::string::npos) { // if this is glibc
-            if (exec_shared.m_glibc_modid != 0) {
-                _GOBLIN_PRINT_WARN("Loaded glibc multiple times, something probably went wrong");
-            }
-            exec_shared.m_glibc_modid = mod_id;
-        }
+        _GOBLIN_PRINT_INFO("Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id);
+
+        map_segments(&exec_shared.m_tls, mod_id);
     }
 
-    _GOBLIN_PRINT_INFO("Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id);
-
-    map_segments(&exec_shared.m_tls, mod_id);
     if (m_dyn_seg_index >= 0) {
         std::set<Elf64_Xword> m_dt_needed_syms;
         parse_dyn_segment(m_dt_needed_syms);
@@ -372,7 +395,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
         dep->build_shared_objs_tree(exec_shared);
         apply_external_dyn_relocations(dep);
     }
-    apply_tls_relocations(mod_id);
+    apply_tls_relocations();
 
     set_correct_permissions(); // set the correct permissions for the segments
 }
@@ -404,7 +427,7 @@ try_symtab:
     return SYMBOL_RESOLUTION_SYMTAB;
 }
 
-void Loadable::apply_external_dyn_relocations(Loadable *dep) {
+void Loadable::apply_external_dyn_relocations(Loadable *dep, const struct executable_shared &exec_shared) {
     const uint8_t lookup_method = dep->set_sym_lookup_method();
     dep->init_hash_tab_data(lookup_method);
 
@@ -418,7 +441,7 @@ void Loadable::apply_external_dyn_relocations(Loadable *dep) {
             if (sym != nullptr) {
                 extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
             } else {
-                _GOBLIN_PRINT_WARN("Symbol not found: " << org_sym_name);
+                _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
             }
         }
     }
@@ -440,7 +463,6 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
         m_hash_data.bloom = &reinterpret_cast<uint64_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[4];
         m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_hash_data.bloom)[m_hash_data.bloom_size];
         m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
-
     } else { // its ELF hash
         index = m_sht_indices.elf_hash;
         m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
@@ -451,18 +473,18 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
 }
 
 void Loadable::apply_tls_relocations(const id_t mod_id) {
-    for (auto i : m_tls_relas) {
+    for (const auto i : m_tls_relas) {
+        // get address in which we need to apply the relocation
         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
+        // get the symbol that we need to apply the relocation with
         Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
+
         switch (ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info)) {
         case R_X86_64_DTPOFF64:
-            *addr = sym->st_value + m_load_base_addr;
+            *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend;
             break;
-        case R_X86_64_DTPMOD64:
-            *addr = mod_id;
-            break;
-        default: /*case of R_X86_64_TPOFF64*/
-            *addr = sym->st_value + m_dyn.rela.m_addr[i].r_addend + m_load_base_addr;
+        default: // case R_X86_64_TPOFF64
+            *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend + ;
             break;
         }
     }
@@ -499,6 +521,7 @@ void Loadable::apply_plt_rela_relocations(void) {
 /*relatively new feature added to ELF*/
 void Loadable::apply_dyn_relr_relocations(void) {
     if (m_dyn.relr.m_addr == nullptr) {
+        _GOBLIN_PRINT_INFO("No relocations found in relr table");
         return;
     }
 
@@ -509,6 +532,7 @@ void Loadable::apply_dyn_relr_relocations(void) {
 
 void Loadable::apply_dyn_rela_relocations(void) {
     if (m_dyn.rela.m_addr == nullptr) {
+        _GOBLIN_PRINT_INFO("No relocations found in rela table");
         return;
     }
 
@@ -534,6 +558,8 @@ void Loadable::apply_dyn_rela_relocations(void) {
             break;
         case R_X86_64_DTPOFF64:
         case R_X86_64_DTPMOD64:
+            m_extern_relas[ExternRelasIndices::REL_TLS_DTPMOD64].m_syms.insert(i);
+            break;
         case R_X86_64_TPOFF64:
             m_tls_relas.insert(i);
             break;

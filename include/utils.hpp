@@ -21,12 +21,15 @@ typedef Elf64_Word id_t;
 
 constexpr uint16_t PAGE_SIZE = 0x1000;
 
-struct ids {
+class IDs {
+  public:
+    id_t allocate_id();
+    inline void free_id(const id_t id);
+
+  private:
     std::queue<id_t> m_free_ids;
     id_t m_biggest_allocated;
 };
-id_t allocate_id(struct ids &ids);
-inline void free_id(struct ids &ids, const id_t id);
 
 bool find_file(const std::filesystem::path &directory, const std::string &filename, std::string &found_path);
 uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);

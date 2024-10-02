@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cwctype>
 #include <elf.h>
 #include <functional>
 #include <set>
@@ -58,7 +59,7 @@ struct tls {
 
 struct executable_shared {
     id_t m_glibc_modid = 0; // no ID can be 0 so we can mark 0 as unset (TLS modids start from 1)
-    struct ids m_mod_ids;
+    IDs m_mod_ids;
     struct tls m_tls;
 }; // stuff shared between the executable and it's loaded shared objects
 
@@ -83,7 +84,9 @@ struct extern_rela {
 // would've used enum class but it's not possible to use it as an index in an array...
 enum ExternRelasIndices : uint8_t {
     REL_COPY = 0,
-    REL_JUMPS_GLOBD = 1,
+    REL_JUMPS_GLOBD,
+    REL_TLS_DTPMOD64,
+    ExternRelasIndices_SIZE,
 };
 
 class Loadable : public ELF_File {
@@ -126,6 +129,8 @@ class Loadable : public ELF_File {
     uint8_t set_sym_lookup_method(void);
     void init_hash_tab_data(const uint8_t lookup_method);
 
+    void handle_if_module_is_glibc(struct executable_shared &exec_shared, const id_t mod_id) const;
+
   protected:
     options_t m_options;
     int16_t m_dyn_seg_index;
@@ -155,10 +160,11 @@ class Loadable : public ELF_File {
     } m_sht_indices;
     struct hash_tab_data m_hash_data;
 
-    std::set<Loadable *> m_dependencies;              // list of each dependency's Loadable object. only this object's m_dependencies
-    std::array<struct extern_rela, 2> m_extern_relas; // indices of symbols that are needed from the external libraries
-    std::set<Elf64_Xword> m_dt_needed_syms;           // list of DT_NEEDED entries - list of SOs we need to load
-    std::set<Elf64_Word> m_tls_relas;                 // indices of symbols that are needed for TLS relocations
+    std::set<Loadable *> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
+    std::array<struct extern_rela, ExternRelasIndices::ExternRelasIndices_SIZE>
+        m_extern_relas;                     // indices of symbols that are needed from the external libraries
+    std::set<Elf64_Xword> m_dt_needed_syms; // list of DT_NEEDED entries - list of SOs we need to load
+    std::set<Elf64_Word> m_tls_relas;       // indices of symbols that are needed for TLS relocations
 
     // static Loadable &glibc_loadable;
     static std::vector<Loadable *> s_loaded_dependencies;
