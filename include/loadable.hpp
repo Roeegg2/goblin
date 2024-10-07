@@ -117,7 +117,7 @@ class Loadable : public ELF_File {
     void apply_dyn_rela_relocations(void);
     void apply_dyn_relr_relocations(void);
     void apply_external_dyn_relocations(Loadable *dep);
-    void apply_tls_relocations(const id_t mod_id);
+    void apply_tls_relocations(void);
     void init_extern_relas(void);
 
     static int elf_perm_to_mmap_perms(const uint32_t elf_flags);

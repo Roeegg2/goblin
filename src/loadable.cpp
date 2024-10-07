@@ -162,7 +162,8 @@ bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
         resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
         resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 
-        s_loaded_dependencies.push_back(new Loadable(path.c_str(), m_options));
+        s_loaded_dependencies.emplace_back(new Loadable(path.c_str(), m_options));
+        // s_loaded_dependencies.emplace_back(path.c_str(), m_options);
         m_dependencies.insert(s_loaded_dependencies.back());
 
         return true;
@@ -275,12 +276,7 @@ void Loadable::map_segments(struct tls *tls, const id_t mod_id) {
         switch (m_prog_headers[i].p_type) {
         case PT_TLS:
             m_tls_seg_index = i;
-            tls->m_init_imgs.push_back({.m_module_id = mod_id, // FIXME: might need to change this if there are cases
-                                                               // where the module ID is decided upon at compile/linktime
-                                        .m_size = m_prog_headers[i].p_memsz,
-                                        .m_data = &m_segment_data[i],
-                                        .m_tlsoffset = tls->m_total_imgs_size,
-                                        .m_is_static_model = true});
+            tls->m_init_imgs.emplace_back(mod_id, m_prog_headers[i].p_memsz, &m_segment_data[i], tls->m_total_imgs_size, true);
             tls->m_total_imgs_size += m_prog_headers[i].p_memsz;
             break;
         case PT_DYNAMIC:
@@ -327,8 +323,6 @@ void Loadable::init_extern_relas(void) {
         }
         return ret;
     };
-    _GOBLIN_CONSTRUCT_NAME_LAMBDA(tls_dtpmod64) { return std::string(str_table + sym_name); };
-
     _GOBLIN_APPLY_RELOCATION_LAMBDA(copy) {
         char *src = reinterpret_cast<char *>(self->m_dyn.sym_table[self_i].st_value + self->m_load_base_addr);
         const char *dst = reinterpret_cast<const char *>(dep->m_dyn.sym_table[dep_i].st_value + dep->m_load_base_addr);
@@ -340,11 +334,6 @@ void Loadable::init_extern_relas(void) {
         *addr = dep->m_dyn.sym_table[dep_i].st_value + dep->m_load_base_addr +
                 dep->m_dyn.rela.m_addr[dep_i].r_addend; // apply relocation - symbol value is an address
     };
-    _GOBLIN_APPLY_RELOCATION_LAMBDA(tls_dtpmod64) {
-        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(self->m_dyn.rela.m_addr[self_i].r_offset +
-                                                          self->m_load_base_addr); // get address where we need to apply relocation
-        *addr = dep_i;                                                             // in this case, dep_i is the module ID
-    };
 
 #undef _GOBLIN_CONSTRUCT_NAME_LAMBDA
 #undef _GOBLIN_APPLY_RELOCATION_LAMBDA
@@ -353,8 +342,6 @@ void Loadable::init_extern_relas(void) {
     m_extern_relas[ExternRelasIndices::REL_COPY].f_apply_relocation = apply_relocation_copy;
     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_construct_name = construct_name_jumps_globd;
     m_extern_relas[ExternRelasIndices::REL_JUMPS_GLOBD].f_apply_relocation = apply_relocation_jumps_globd;
-    m_extern_relas[ExternRelasIndices::REL_TLS_DTPMOD64].f_construct_name = construct_name_tls_dtpmod64;
-    m_extern_relas[ExternRelasIndices::REL_TLS_DTPMOD64].f_apply_relocation = apply_relocation_tls_dtpmod64;
 }
 
 void Loadable::handle_if_module_is_glibc(struct executable_shared &exec_shared, const id_t mod_id) const {
@@ -395,7 +382,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
         dep->build_shared_objs_tree(exec_shared);
         apply_external_dyn_relocations(dep);
     }
-    apply_tls_relocations();
+    // apply_tls_relocations();
 
     set_correct_permissions(); // set the correct permissions for the segments
 }
@@ -427,7 +414,7 @@ try_symtab:
     return SYMBOL_RESOLUTION_SYMTAB;
 }
 
-void Loadable::apply_external_dyn_relocations(Loadable *dep, const struct executable_shared &exec_shared) {
+void Loadable::apply_external_dyn_relocations(Loadable *dep) {
     const uint8_t lookup_method = dep->set_sym_lookup_method();
     dep->init_hash_tab_data(lookup_method);
 
@@ -472,23 +459,25 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
     }
 }
 
-void Loadable::apply_tls_relocations(const id_t mod_id) {
-    for (const auto i : m_tls_relas) {
-        // get address in which we need to apply the relocation
-        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
-        // get the symbol that we need to apply the relocation with
-        Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
+// void Loadable::apply_tls_relocations(const id_t mod_id) {
+//     for (const auto i : m_tls_relas) {
+//         // get address in which we need to apply the relocation
+//         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
+//         // get the symbol that we need to apply the relocation with
+//         Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
+//
+//         switch (ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info)) {
+//         case R_X86_64_DTPOFF64:
+//             *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend;
+//             break;
+//         default: // case R_X86_64_TPOFF64
+//             *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend + ;
+//             break;
+//         }
+//     }
+// }
 
-        switch (ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info)) {
-        case R_X86_64_DTPOFF64:
-            *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend;
-            break;
-        default: // case R_X86_64_TPOFF64
-            *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend + ;
-            break;
-        }
-    }
-}
+void Loadable::apply_tls_relocations(void) {}
 
 void Loadable::apply_plt_rela_relocations(void) {
     if (m_plt.rela.m_addr == nullptr) {
@@ -521,7 +510,7 @@ void Loadable::apply_plt_rela_relocations(void) {
 /*relatively new feature added to ELF*/
 void Loadable::apply_dyn_relr_relocations(void) {
     if (m_dyn.relr.m_addr == nullptr) {
-        _GOBLIN_PRINT_INFO("No relocations found in relr table");
+        _GOBLIN_PRINT_INFO("No RELR relocations found");
         return;
     }
 
@@ -532,7 +521,7 @@ void Loadable::apply_dyn_relr_relocations(void) {
 
 void Loadable::apply_dyn_rela_relocations(void) {
     if (m_dyn.rela.m_addr == nullptr) {
-        _GOBLIN_PRINT_INFO("No relocations found in rela table");
+        _GOBLIN_PRINT_INFO("No RELA relocations found");
         return;
     }
 
