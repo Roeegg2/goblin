@@ -36,6 +36,8 @@ uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
 Elf64_Addr page_align_down(const Elf64_Addr addr);
 unsigned long elf_hash(const unsigned char *name);
 uint32_t gnu_hash(const uint8_t *name);
+int elf_perm_to_mmap_perms(const uint32_t elf_flags);
+
 // unsigned long gnu_hash(const unsigned char *name);
 }; // namespace Goblin
 

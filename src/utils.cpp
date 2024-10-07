@@ -1,5 +1,7 @@
 #include "../include/utils.hpp"
 
+#include <sys/mman.h>
+
 namespace Goblin {
 
 inline void IDs::free_id(const id_t id) { m_free_ids.push(id); }
@@ -61,6 +63,19 @@ uint32_t gnu_hash(const uint8_t *name) {
     }
 
     return h;
+}
+
+int elf_perm_to_mmap_perms(const uint32_t elf_flags) {
+    int mmap_flags = 0;
+
+    if (elf_flags & 0x1)
+        mmap_flags |= PROT_EXEC;
+    if (elf_flags & 0x2)
+        mmap_flags |= PROT_WRITE;
+    if (elf_flags & 0x4)
+        mmap_flags |= PROT_READ;
+
+    return mmap_flags;
 }
 
 } // namespace Goblin

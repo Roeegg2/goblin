@@ -58,6 +58,7 @@ struct tls {
 };
 
 struct executable_shared {
+    options_t m_options;
     id_t m_glibc_modid = 0; // no ID can be 0 so we can mark 0 as unset (TLS modids start from 1)
     IDs m_mod_ids;
     struct tls m_tls;
@@ -91,7 +92,7 @@ enum ExternRelasIndices : uint8_t {
 
 class Loadable : public ELF_File {
   public:
-    Loadable(const std::string file_path, const options_t options);
+    Loadable(const std::string file_path);
     ~Loadable();
 #ifdef DEBUG
     void print_dynamic_segment(void) const;
@@ -113,26 +114,24 @@ class Loadable : public ELF_File {
     void map_segments(struct tls *tls, const id_t mod_id);
     void setup_segment(const Elf64_Word i);
     void set_correct_permissions(void);
-    void apply_plt_rela_relocations(void);
+    void apply_plt_rela_relocations(const uint8_t binding_option);
     void apply_dyn_rela_relocations(void);
     void apply_dyn_relr_relocations(void);
-    void apply_external_dyn_relocations(Loadable *dep);
+    void apply_external_dyn_relocations(Loadable *dep, const uint8_t symbol_resolution_option);
     void apply_tls_relocations(void);
     void init_extern_relas(void);
 
-    static int elf_perm_to_mmap_perms(const uint32_t elf_flags);
     uint32_t get_total_page_count(void) const;
 
     Elf64_Sym *lookup_regular_dynsym(const char *sym_name) const;
     Elf64_Sym *lookup_elf_hash_dynsym(const char *sym_name) const;
     Elf64_Sym *lookup_gnu_hash_dynsym(const char *sym_name) const;
-    uint8_t set_sym_lookup_method(void);
+    uint8_t set_sym_lookup_method(const uint8_t symbol_resolution_option);
     void init_hash_tab_data(const uint8_t lookup_method);
 
     void handle_if_module_is_glibc(struct executable_shared &exec_shared, const id_t mod_id) const;
 
   protected:
-    options_t m_options;
     int16_t m_dyn_seg_index;
     int16_t m_tls_seg_index;
     Elf64_Addr m_load_base_addr;
@@ -160,14 +159,12 @@ class Loadable : public ELF_File {
     } m_sht_indices;
     struct hash_tab_data m_hash_data;
 
-    std::set<Loadable *> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
+    std::set<std::shared_ptr<Loadable>> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
     std::array<struct extern_rela, ExternRelasIndices::ExternRelasIndices_SIZE>
-        m_extern_relas;                     // indices of symbols that are needed from the external libraries
-    std::set<Elf64_Xword> m_dt_needed_syms; // list of DT_NEEDED entries - list of SOs we need to load
-    std::set<Elf64_Word> m_tls_relas;       // indices of symbols that are needed for TLS relocations
+        m_extern_relas;               // indices of symbols that are needed from the external libraries
+    std::set<Elf64_Word> m_tls_relas; // indices of symbols that are needed for TLS relocations
 
-    // static Loadable &glibc_loadable;
-    static std::vector<Loadable *> s_loaded_dependencies;
+    static std::vector<std::shared_ptr<Loadable>> s_loaded_dependencies;
     static const char *s_DEFAULT_SHARED_OBJ_PATHS[];
 
     std::function<Elf64_Sym *(const char *)> f_lookup_dynsym;

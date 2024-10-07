@@ -21,11 +21,11 @@ const char *Loadable::s_DEFAULT_SHARED_OBJ_PATHS[]{
     "/lib64/",
     "/usr/lib64/",
 };
-std::vector<Loadable *> Loadable::s_loaded_dependencies;
+std::vector<std::shared_ptr<Loadable>> Loadable::s_loaded_dependencies;
 
-Loadable::Loadable(const std::string file_path, const options_t options)
-    : ELF_File(file_path), m_options(options), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr), m_runpath(nullptr),
-      m_dyn({{0, 0}, {0, 0}, 0, 0}), m_plt({{0, 0}, 0}),
+Loadable::Loadable(const std::string file_path)
+    : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}),
+      m_plt({{0, 0}, 0}),
       m_sht_indices({get_section_index_by_type(SHT_DYNSYM), get_section_index_by_type(SHT_DYNSYM),
                      get_section_index_by_type(SHT_DYNSYM)}) // ELF_File calls full_parse on contructor so there is not issue here
 {
@@ -89,7 +89,7 @@ Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
     return nullptr;
 }
 
-void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
+void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &dt_needed_syms) {
     Elf64_Dyn *dyn_table = reinterpret_cast<Elf64_Dyn *>(m_segment_data[m_dyn_seg_index]);
     while (dyn_table->d_tag != DT_NULL) {
         switch (dyn_table->d_tag) {
@@ -115,7 +115,7 @@ void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &m_dt_needed_syms) {
             m_plt.got = reinterpret_cast<Elf64_Addr *>(dyn_table->d_un.d_ptr + m_load_base_addr);
             break;
         case DT_NEEDED: // name of a shared object we need to load
-            m_dt_needed_syms.insert(dyn_table->d_un.d_val);
+            dt_needed_syms.insert(dyn_table->d_un.d_val);
             break;
         case DT_RPATH:
             m_rpath = reinterpret_cast<char *>(dyn_table->d_un.d_val);
@@ -162,8 +162,7 @@ bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
         resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
         resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 
-        s_loaded_dependencies.emplace_back(new Loadable(path.c_str(), m_options));
-        // s_loaded_dependencies.emplace_back(path.c_str(), m_options);
+        s_loaded_dependencies.emplace_back(new Loadable(path.c_str()));
         m_dependencies.insert(s_loaded_dependencies.back());
 
         return true;
@@ -172,8 +171,8 @@ bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
     return false;
 }
 
-inline void Loadable::construct_loadables_for_shared_objects(const std::set<Elf64_Xword> &m_dt_needed_syms) {
-    for (Elf64_Xword dt_needed : m_dt_needed_syms) { // for each SO
+inline void Loadable::construct_loadables_for_shared_objects(const std::set<Elf64_Xword> &dt_needed_syms) {
+    for (Elf64_Xword dt_needed : dt_needed_syms) { // for each SO
         if (check_n_handle_loaded_dep(dt_needed) || check_n_handle_new_dep(dt_needed)) {
             continue;
         }
@@ -209,19 +208,6 @@ bool Loadable::resolve_path_default(std::string &path, const char *shared_obj_na
     }
 
     return false;
-}
-
-int Loadable::elf_perm_to_mmap_perms(const uint32_t elf_flags) {
-    int mmap_flags = 0;
-
-    if (elf_flags & 0x1)
-        mmap_flags |= PROT_EXEC;
-    if (elf_flags & 0x2)
-        mmap_flags |= PROT_WRITE;
-    if (elf_flags & 0x4)
-        mmap_flags |= PROT_READ;
-
-    return mmap_flags;
 }
 
 void Loadable::alloc_mem_for_segments(void) {
@@ -368,19 +354,19 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     }
 
     if (m_dyn_seg_index >= 0) {
-        std::set<Elf64_Xword> m_dt_needed_syms;
-        parse_dyn_segment(m_dt_needed_syms);
-        construct_loadables_for_shared_objects(m_dt_needed_syms); // for each shared object dependency, create a Loadable object
+        std::set<Elf64_Xword> dt_needed_syms;
+        parse_dyn_segment(dt_needed_syms);
+        construct_loadables_for_shared_objects(dt_needed_syms); // for each shared object dependency, create a Loadable object
     }
 
     apply_dyn_relr_relocations();
     apply_dyn_rela_relocations();
-    apply_plt_rela_relocations();
+    apply_plt_rela_relocations(exec_shared.m_options.binding);
 
     init_extern_relas();
     for (auto &dep : m_dependencies) { // for every shared object dependency recursively build the shared objects tree
         dep->build_shared_objs_tree(exec_shared);
-        apply_external_dyn_relocations(dep);
+        apply_external_dyn_relocations(dep.get(), exec_shared.m_options.symbol_resolution);
     }
     // apply_tls_relocations();
 
@@ -389,9 +375,9 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
 
 /* for anyone reading this in the future, I'm very sorry for this
  * mess...Hopefully you pull through :) */
-uint8_t Loadable::set_sym_lookup_method(void) {
-    if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_GNU_HASH, 1)) { // if user specified GNU hash
-        if (m_sht_indices.gnu_hash == (uint16_t)(-1)) {                                   // if no .gnu.hash section found
+uint8_t Loadable::set_sym_lookup_method(const uint8_t symbol_resolution_option) {
+    if (__builtin_expect(symbol_resolution_option == SYMBOL_RESOLUTION_GNU_HASH, 1)) { // if user specified GNU hash
+        if (m_sht_indices.gnu_hash == (uint16_t)(-1)) {                                // if no .gnu.hash section found
             _GOBLIN_PRINT_WARN("No .gnu.hash section found, trying ELF hash");
             goto try_elf_hash;
         }
@@ -399,7 +385,7 @@ uint8_t Loadable::set_sym_lookup_method(void) {
             std::bind(&Loadable::lookup_gnu_hash_dynsym, this, std::placeholders::_1); // otherwise, set GNU hash lookup method
         return SYMBOL_RESOLUTION_GNU_HASH;
     }
-    if (__builtin_expect(m_options.symbol_resolution == SYMBOL_RESOLUTION_ELF_HASH, 1)) { // if user specified ELF hash
+    if (__builtin_expect(symbol_resolution_option == SYMBOL_RESOLUTION_ELF_HASH, 1)) { // if user specified ELF hash
     try_elf_hash:
         if (m_sht_indices.elf_hash == (uint16_t)(-1)) { // if no .hash section found
             _GOBLIN_PRINT_WARN("No .hash section found, trying symtab");
@@ -412,26 +398,6 @@ uint8_t Loadable::set_sym_lookup_method(void) {
 try_symtab:
     f_lookup_dynsym = std::bind(&Loadable::lookup_regular_dynsym, this, std::placeholders::_1); // set symtab lookup method
     return SYMBOL_RESOLUTION_SYMTAB;
-}
-
-void Loadable::apply_external_dyn_relocations(Loadable *dep) {
-    const uint8_t lookup_method = dep->set_sym_lookup_method();
-    dep->init_hash_tab_data(lookup_method);
-
-    for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
-        for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
-            std::string org_sym_name =
-                extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of original symbol
-
-            Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
-
-            if (sym != nullptr) {
-                extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
-            } else {
-                _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
-            }
-        }
-    }
 }
 
 void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
@@ -459,32 +425,34 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
     }
 }
 
-// void Loadable::apply_tls_relocations(const id_t mod_id) {
-//     for (const auto i : m_tls_relas) {
-//         // get address in which we need to apply the relocation
-//         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
-//         // get the symbol that we need to apply the relocation with
-//         Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_dyn.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
-//
-//         switch (ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info)) {
-//         case R_X86_64_DTPOFF64:
-//             *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend;
-//             break;
-//         default: // case R_X86_64_TPOFF64
-//             *addr = m_dyn.sym_table[sym->st_shndx].st_value + m_dyn.rela.m_addr[i].r_addend + ;
-//             break;
-//         }
-//     }
-// }
+void Loadable::apply_external_dyn_relocations(Loadable *dep, const uint8_t symbol_resolution_option) {
+    const uint8_t lookup_method = dep->set_sym_lookup_method(symbol_resolution_option);
+    dep->init_hash_tab_data(lookup_method);
+
+    for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
+        for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
+            std::string org_sym_name =
+                extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of original symbol
+
+            Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
+
+            if (sym != nullptr) {
+                extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
+            } else {
+                _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
+            }
+        }
+    }
+}
 
 void Loadable::apply_tls_relocations(void) {}
 
-void Loadable::apply_plt_rela_relocations(void) {
+void Loadable::apply_plt_rela_relocations(const uint8_t binding_option) {
     if (m_plt.rela.m_addr == nullptr) {
         return;
     }
 
-    if (__builtin_expect(m_options.binding == BINDING_LAZY, 1)) {
+    if (__builtin_expect(binding_option == BINDING_LAZY, 1)) {
         return;
     } else { // eager binding
         for (Elf64_Word i = 0; i < (m_plt.rela.m_total_size / m_plt.rela.s_ENTRY_SIZE); i++) {

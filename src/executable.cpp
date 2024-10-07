@@ -28,7 +28,7 @@ namespace Goblin {
 
 uint64_t _dl_random = 0xabcdabcd;
 
-Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path, options) {
+Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path) {
     // get section table indices
     m_sect_indices.strtab = get_section_index_by_name(".strtab");
     m_sect_indices.symtab = get_section_index_by_name(".symtab");
@@ -42,6 +42,8 @@ Executable::Executable(const std::string file_path, const options_t options) : L
     m_symtab = new Elf64_Sym[m_sect_headers[m_sect_indices.symtab].sh_size / sizeof(Elf64_Sym)];
     m_elf_file.seekg(m_sect_headers[m_sect_indices.symtab].sh_offset);
     m_elf_file.read(reinterpret_cast<char *>(m_symtab), m_sect_headers[m_sect_indices.symtab].sh_size);
+
+    m_exec_shared.m_options = options;
 }
 
 Executable::~Executable(void) {}
