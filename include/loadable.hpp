@@ -91,6 +91,11 @@ enum ExternRelasIndices : uint8_t {
 };
 
 class Loadable : public ELF_File {
+    friend class Extern_Rela;
+    friend class Extern_Rela_Copy;
+    friend class Extern_Rela_Jumps_Globd;
+    friend class Extern_Rela_TLS_dtpmod;
+
   public:
     Loadable(const std::string file_path);
     ~Loadable();
@@ -114,13 +119,15 @@ class Loadable : public ELF_File {
     void map_segments(struct tls *tls, const id_t mod_id);
     void setup_segment(const Elf64_Word i);
     void set_correct_permissions(void);
-    void apply_plt_rela_relocations(const uint8_t binding_option);
-    void apply_dyn_rela_relocations(void);
-    void apply_dyn_relr_relocations(void);
-    void apply_external_dyn_relocations(Loadable *dep, const uint8_t symbol_resolution_option);
-    void apply_tls_relocations(void);
-    void init_extern_relas(void);
+    void apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, const uint8_t binding_option);
 
+    void apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
+                                    std::set<Elf64_Word> &relas_tls_dtpmod64);
+    void apply_dyn_relr_relocations(void);
+    void apply_external_dyn_relocations(Loadable *dep, const std::set<Elf64_Word> &relas_copy,
+                                        const std::set<Elf64_Word> &relas_jumps_globd, const std::set<Elf64_Word> &relas_tls_dtpmod64,
+                                        const uint8_t symbol_resolution_option);
+    void apply_tls_relocations(void);
     uint32_t get_total_page_count(void) const;
 
     Elf64_Sym *lookup_regular_dynsym(const char *sym_name) const;
