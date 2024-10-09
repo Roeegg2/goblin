@@ -91,11 +91,6 @@ enum ExternRelasIndices : uint8_t {
 };
 
 class Loadable : public ELF_File {
-    friend class Extern_Rela;
-    friend class Extern_Rela_Copy;
-    friend class Extern_Rela_Jumps_Globd;
-    friend class Extern_Rela_TLS_dtpmod;
-
   public:
     Loadable(const std::string file_path);
     ~Loadable();
@@ -122,7 +117,8 @@ class Loadable : public ELF_File {
     void apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, const uint8_t binding_option);
 
     void apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
-                                    std::set<Elf64_Word> &relas_tls_dtpmod64);
+                                    std::set<Elf64_Word> &relas_tls_dtpmod64, std::set<Elf64_Word> &relas_tls_tpoff64,
+                                    std::set<Elf64_Word> &relas_tls_dtpoff64);
     void apply_dyn_relr_relocations(void);
     void apply_external_dyn_relocations(Loadable *dep, const std::set<Elf64_Word> &relas_copy,
                                         const std::set<Elf64_Word> &relas_jumps_globd, const std::set<Elf64_Word> &relas_tls_dtpmod64,
@@ -164,17 +160,15 @@ class Loadable : public ELF_File {
         uint16_t elf_hash;
         uint16_t dynsym;
     } m_sht_indices;
+
     struct hash_tab_data m_hash_data;
+    std::function<Elf64_Sym *(const char *)> f_lookup_dynsym;
 
     std::set<std::shared_ptr<Loadable>> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies
-    std::array<struct extern_rela, ExternRelasIndices::ExternRelasIndices_SIZE>
-        m_extern_relas;               // indices of symbols that are needed from the external libraries
-    std::set<Elf64_Word> m_tls_relas; // indices of symbols that are needed for TLS relocations
+    std::set<Elf64_Word> m_tls_relas;                   // indices of symbols that are needed for TLS relocations
 
     static std::vector<std::shared_ptr<Loadable>> s_loaded_dependencies;
     static const char *s_DEFAULT_SHARED_OBJ_PATHS[];
-
-    std::function<Elf64_Sym *(const char *)> f_lookup_dynsym;
 };
 }; // namespace Goblin
 

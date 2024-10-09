@@ -7,6 +7,7 @@
 #include <elf.h>
 #include <fcntl.h>
 #include <iostream>
+#include <memory>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -147,7 +148,7 @@ void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &dt_needed_syms) {
 bool Loadable::check_n_handle_loaded_dep(const Elf64_Xword dt_needed) {
     const uint16_t foo_size = s_loaded_dependencies.size();
     for (uint16_t i = 0; i < foo_size; i++) {
-        if (s_loaded_dependencies[i]->m_elf_file_path.filename() == m_dyn.str_table + dt_needed) {
+        if (s_loaded_dependencies[i]->m_elf_file_path.filename() == m_dyn.str_table + dt_needed) { // if shared lib is already been loaded
             m_dependencies.insert(s_loaded_dependencies[i]);
             return true;
         }
@@ -162,7 +163,7 @@ bool Loadable::check_n_handle_new_dep(const Elf64_Xword dt_needed) {
         resolve_path_rpath_runpath(m_runpath, path, m_dyn.str_table + dt_needed) ||
         resolve_path_ld_library_path(path, m_dyn.str_table + dt_needed) || resolve_path_default(path, m_dyn.str_table + dt_needed)) {
 
-        s_loaded_dependencies.emplace_back(new Loadable(path.c_str()));
+        s_loaded_dependencies.emplace_back(new Loadable(path));
         m_dependencies.insert(s_loaded_dependencies.back());
 
         return true;
@@ -325,9 +326,9 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     }
     {
 
-        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64;
+        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64;
         apply_dyn_relr_relocations();
-        apply_dyn_rela_relocations(relas_copy, relas_jumps_globd, relas_tls_dtpmod64);
+        apply_dyn_rela_relocations(relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64);
         apply_plt_rela_relocations(relas_jumps_globd, exec_shared.m_options.binding);
 
         for (auto &dep : m_dependencies) { // for every shared object dependency recursively build the shared objects tree
@@ -337,7 +338,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
         }
     }
 
-    set_correct_permissions(); // set the correct permissions for the segments
+    // set_correct_permissions(); // set the correct permissions for the segments
 }
 
 /* for anyone reading this in the future, I'm very sorry for this
@@ -428,29 +429,17 @@ void Loadable::apply_external_dyn_relocations(Loadable *dep, const std::set<Elf6
                                                           m_load_base_addr); // get address where we need to apply relocation
         *addr = sym->st_value + dep->m_load_base_addr;
     }
-
-    // for (auto extern_rela : m_extern_relas) {       // for every set of symbols that need relocation
-    //     for (auto sym_index : extern_rela.m_syms) { // for every needed symbol
-    //         std::string org_sym_name =
-    //             extern_rela.f_construct_name(m_dyn.str_table, m_dyn.sym_table[sym_index].st_name); // get name of original symbol
-    //
-    //         Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
-    //
-    //         if (sym != nullptr) {
-    //             extern_rela.f_apply_relocation(this, dep, sym_index, sym - dep->m_dyn.sym_table);
-    //         } else {
-    //             _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
-    //         }
-    //     }
-    // }
 }
 
-void Loadable::apply_tls_relocations(void) {}
+void Loadable::apply_tls_relocations(void) { _GOBLIN_PRINT_INFO("No TLS relocations found"); }
 
 void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, const uint8_t binding_option) {
     if (m_plt.rela.m_addr == nullptr) {
+        _GOBLIN_PRINT_INFO("No PLT relocations found");
         return;
     }
+
+    _GOBLIN_PRINT_INFO("Applying PLT relocations");
 
     if (__builtin_expect(binding_option == BINDING_LAZY, 1)) {
         return;
@@ -482,17 +471,21 @@ void Loadable::apply_dyn_relr_relocations(void) {
         return;
     }
 
+    _GOBLIN_PRINT_INFO("Applying RELR relocations");
+
     for (Elf64_Word i = 0; i < (m_dyn.relr.m_total_size / m_dyn.relr.s_ENTRY_SIZE); i++) {
         m_dyn.relr.m_addr[i] += m_load_base_addr;
     }
 }
 
 void Loadable::apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
-                                          std::set<Elf64_Word> &relas_tls_dtpmod64) {
+                                          std::set<Elf64_Word> &relas_tls_dtpmod64, std::set<Elf64_Word> &relas_tls_tpoff64,
+                                          std::set<Elf64_Word> &relas_tls_dtpoff64) {
     if (m_dyn.rela.m_addr == nullptr) {
         _GOBLIN_PRINT_INFO("No RELA relocations found");
         return;
     }
+    _GOBLIN_PRINT_INFO("Applying RELA relocations");
 
     for (Elf64_Word i = 0; i < (m_dyn.rela.m_total_size / m_dyn.rela.s_ENTRY_SIZE); i++) {
         Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[i].r_offset + m_load_base_addr);
@@ -514,13 +507,15 @@ void Loadable::apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std:
         case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
             relas_jumps_globd.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
-        // case R_X86_64_DTPOFF64:
         case R_X86_64_DTPMOD64:
             relas_tls_dtpmod64.insert(i);
             break;
-        // case R_X86_64_TPOFF64:
-        //     m_tls_relas.insert(i);
-        //     break;
+        case R_X86_64_DTPOFF64:
+            relas_tls_dtpoff64.insert(i);
+            break;
+        case R_X86_64_TPOFF64:
+            relas_tls_tpoff64.insert(i);
+            break;
         default:
             _GOBLIN_PRINT_WARN("Unknown relocation type number: " << std::dec << ELF64_R_TYPE(m_dyn.rela.m_addr[i].r_info));
         }
