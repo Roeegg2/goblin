@@ -22,7 +22,7 @@ static uint16_t parse_options(const int argc, char **argv, __attribute__((unused
 }
 #undef _GOBLIN_USUAGE
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv, char **envp) {
     options_t options = {
         .binding = BINDING_EAGER,
         .symbol_resolution = SYMBOL_RESOLUTION_ELF_HASH,
@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 #ifdef DEBUG
     executable->full_print();
 #endif
-    executable->run(argc - i, argv + i);
+    executable->run(argc - i, argv + i, envp);
 
     return 0;
 }

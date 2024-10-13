@@ -17,11 +17,12 @@ class Executable final : public Loadable {
     uint16_t get_env_count(int argc, char **exec_argv);
     void setup_auxv(Elf64_auxv_t *auxv);
     void (*get_main(void))(int, char **, char **);
+    uint8_t init_auxv(Elf64_auxv_t *new_auxv, Elf64_auxv_t *old_auxv);
 
   public:
     Executable(const std::string file_path, const options_t options);
     ~Executable(void);
-    void run(int exec_argc, char **exec_argv);
+    void run(int exec_argc, char **exec_argv, char **exec_envp);
     void cleanup(void);
 
     void *__tls_get_addr(tls_index *ti);

@@ -5,23 +5,45 @@
 .global _goblin_tls_get_tp
 .global _goblin_call__start
 
-# rdi - argc
-# rsi - argv
-# rdx - atexit shit
-# rcx - address of _start
-# r8 - total amount to push
+# rdi - end of argv
+# rsi - end of envp
+# rdx - end of auxv
+# rcx - argc
+# r8 - _start
+# r9 - envp count
+# LOCALS:
+# rax - looper
 
-# rax - main looper
+# I know, not very efficient, but it's just a PoC. As I've already stated before, the goal of this project isn't to create something actually usefull - just to understand how thiongs work. And this is the simplest, most understandable and least error-prone way to do it.
 _goblin_call__start:
-	# push garbage
-	push %rax 
-_goblin_start_push_loop:
-	push (%rsi, %r8, 8)
-	dec %r8
-	test %r8, %r8
-	jne _goblin_start_push_loop
-	push %rdi
-	jmp *%rcx
+	xor %rax, %rax
+_goblin_call__start_push_auxv:
+	pushq 8(%rdx)
+	pushq (%rdx)
+	add $16, %rdx
+	inc %rax
+	cmp $23, %rax
+	jne _goblin_call__start_push_auxv
+	xor %rax, %rax
+_goblin_call__start_push_envp:
+	pushq (%rsi)
+	add $8, %rsi
+	inc %rax
+	cmp %r9, %rax
+	jne _goblin_call__start_push_envp
+	xor %rax, %rax
+_goblin_call__start_push_argv:
+	pushq (%rdi)
+	add $8, %rdi
+	inc %rax
+	cmp %rcx, %rax
+	jne _goblin_call__start_push_argv
+	# push argc
+	pushq %rcx
+	# jump tp _start
+	jmp *%r8
+
+	
 
 # rdi - receives TP (pointer to the TLS block)
 _goblin_tls_init_tp:

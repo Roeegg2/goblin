@@ -224,7 +224,8 @@ void Loadable::alloc_mem_for_segments(void) {
             i++;
         }
         uint32_t total_page_count =
-            get_page_count(m_prog_headers[i - 1].p_vaddr + m_prog_headers[i - 1].p_memsz - m_load_base_addr, m_load_base_addr) + 1;
+            get_page_count(m_prog_headers[i - 1].p_vaddr + m_prog_headers[i - 1].p_memsz - m_load_base_addr, m_load_base_addr) +
+            1; // have no idea what the fuck ive done here, but it works. ill clarify it in the future
 
         m_load_base_addr = reinterpret_cast<Elf64_Addr>(mmap(reinterpret_cast<void *>(m_load_base_addr), total_page_count * PAGE_SIZE,
                                                              PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
@@ -338,7 +339,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
         }
     }
 
-    // set_correct_permissions(); // set the correct permissions for the segments
+    set_correct_permissions(); // set the correct permissions for the segments
 }
 
 /* for anyone reading this in the future, I'm very sorry for this
