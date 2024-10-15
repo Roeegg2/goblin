@@ -18,8 +18,7 @@
 #define _GOBLIN__START (reinterpret_cast<void (*)(void)>(m_load_base_addr + m_elf_header.e_entry))
 
 extern "C" {
-__attribute__((noreturn)) void _GOBLIN_GI(call__start)(char **argv, char **envp, Elf64_auxv_t *auxv, int argc,
-                                                       __attribute__((noreturn)) void (*_start)(void), uint16_t envp_cnt);
+__attribute__((noreturn)) void _GOBLIN_GI(call__start)(void *argv_end, void (*_start)(void), int argc);
 }
 
 namespace Goblin {
@@ -60,82 +59,31 @@ void (*Executable::get_main(void))(int, char **, char **) {
     return reinterpret_cast<void (*)(int, char **, char **)>(main_sym->st_value + m_load_base_addr);
 }
 
-uint8_t Executable::init_auxv(Elf64_auxv_t *new_auxv, Elf64_auxv_t *old_auxv) {
-    // ORDER OF AUXV ENTRIES:
-    // 1. (if vdso enabled) AT_SYSINFO_EHDR
-    // 2. AT_MINSIGSTKSZ
-    //
-    // 3. AT_HWCAP
-    // 4. AT_PAGESZ
-    // 5. AT_PHDR
-    // 6. AT_PHENT
-    // 7. AT_PHNUM
-    // 8. AT_BASE
-    // 9. AT_FLAGS
-    // 10. AT_ENTRY
-    // 11. AT_UID
-    // 12. AT_EUID
-    // 13. AT_GID
-    // 14. AT_EGID
-    // 15. AT_SECURE
-    // 16. AT_RANDOM
-    //
-    // 17. AT_HWCAP2
-    // 18. AT_EXECFN
-    // 19. AT_PLATFORM
-    // 20. AT_RSEQ_FEATURE_SIZE
-    // 21. AT_RSEQ_ALIGN
-    // 22. AT_NULL
-
-    // copy values from Goblin's auxv to new auxv
-    uint8_t i = 0;
-#define _GOBLIN_SET_AUXV_ENT(i, type, value)                                                                                               \
-    new_auxv[i].a_un.a_val = value;                                                                                                        \
-    new_auxv[i].a_type = type;                                                                                                             \
-    i++;
-    // if vdso enabled
-    _GOBLIN_SET_AUXV_ENT(i, AT_SYSINFO_EHDR, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_MINSIGSTKSZ, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_HWCAP, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_PAGESZ, 0);
-    {
-        char *phdr = new char[m_elf_header.e_phentsize * m_elf_header.e_phnum];
-        m_elf_file.seekg(m_elf_header.e_phoff);
-        m_elf_file.read(phdr, m_elf_header.e_phentsize * m_elf_header.e_phnum);
-        _GOBLIN_SET_AUXV_ENT(i, AT_PHDR, reinterpret_cast<uint64_t>(phdr));
-    }
-    _GOBLIN_SET_AUXV_ENT(i, AT_PHENT, m_elf_header.e_phentsize);
-    _GOBLIN_SET_AUXV_ENT(i, AT_PHNUM, m_elf_header.e_phnum);
-    _GOBLIN_SET_AUXV_ENT(i, AT_BASE, m_load_base_addr);
-    _GOBLIN_SET_AUXV_ENT(i, AT_FLAGS, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_ENTRY, m_elf_header.e_entry);
-    _GOBLIN_SET_AUXV_ENT(i, AT_UID, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_EUID, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_GID, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_EGID, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_SECURE, 0);
-    // if not provided by the kernel
-    _GOBLIN_SET_AUXV_ENT(i, AT_RANDOM, reinterpret_cast<uint64_t>(&_dl_random));
-    _GOBLIN_SET_AUXV_ENT(i, AT_HWCAP2, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_EXECFN, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_PLATFORM, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_RSEQ_FEATURE_SIZE, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_RSEQ_ALIGN, 0);
-    _GOBLIN_SET_AUXV_ENT(i, AT_NULL, 0);
-#undef _GOBLIN_SET_AUXV_ENT
-
-    // ugly and inefficient but i dont give a fuck
-    for (uint8_t j = 0; j < 22; j++) {
-        for (auto foo_auxv = old_auxv; foo_auxv->a_type != AT_NULL; foo_auxv++) {
-            if ((new_auxv[j].a_type == foo_auxv->a_type) && (new_auxv[j].a_un.a_val == 0)) {
-                new_auxv[j].a_un.a_val = foo_auxv->a_un.a_val;
-            }
-        }
-    }
-
-    return i;
-}
-
+// ORDER OF AUXV ENTRIES:
+// 1. (if vdso enabled) AT_SYSINFO_EHDR
+// 2. AT_MINSIGSTKSZ
+//
+// 3. AT_HWCAP
+// 4. AT_PAGESZ
+// 5. AT_PHDR
+// 6. AT_PHENT
+// 7. AT_PHNUM
+// 8. AT_BASE
+// 9. AT_FLAGS
+// 10. AT_ENTRY
+// 11. AT_UID
+// 12. AT_EUID
+// 13. AT_GID
+// 14. AT_EGID
+// 15. AT_SECURE
+// 16. AT_RANDOM
+//
+// 17. AT_HWCAP2
+// 18. AT_EXECFN
+// 19. AT_PLATFORM
+// 20. AT_RSEQ_FEATURE_SIZE
+// 21. AT_RSEQ_ALIGN
+// 22. AT_NULL
 void Executable::run(int exec_argc, char **exec_argv, char **exec_envp) {
     build_shared_objs_tree(m_exec_shared);
 
@@ -147,26 +95,106 @@ void Executable::run(int exec_argc, char **exec_argv, char **exec_envp) {
     cleanup();
     // FIXME: get rid of not used anymore stuff
 
-    uint16_t envp_cnt;
-    Elf64_auxv_t *new_auxv = new Elf64_auxv_t[AT_MINSIGSTKSZ + 1];
-    {
+    uint16_t envp_cnt = 0;
+    for (; exec_envp[envp_cnt] != AT_NULL; envp_cnt++)
+        ;
+    // we push:
+    // ------- STACK BOTTOM -----------
+    // env strings, argv strings, some padding, other shit linux loader already put we don't need to worry about
+    // auxv[n] (AT_NULL) NOTE: you can just push only the a_type to save 8 bytes of space, but fuck that
+    // auxv[n-1]
+    // ...
+    // auxv[0]
+    // NULL
+    // envp[n]
+    // envp[n-1]
+    // ...
+    // envp[0]
+    // NULL
+    // argv[n]
+    // argv[n-1]
+    // ...
+    // argv[0]
+    // argc
 
-        // get old auxv
-        Elf64_auxv_t *old_auxv;
-        for (envp_cnt = 0; exec_envp[envp_cnt] != AT_NULL; envp_cnt++)
-            ;
-        std::cout << "envp_cnt: " << envp_cnt << std::endl;
-        old_auxv = reinterpret_cast<Elf64_auxv_t *>(exec_envp + envp_cnt + 1);
+    // NOTE: auxv 99.99% won't _actually_ be AT_MINSIGSTKSZ + 1, but this is the maximum possible length
+    const auto total_length =
+        1 + (exec_argc * sizeof(char *)) + 1 + (envp_cnt * sizeof(char *)) + 1 + (sizeof(Elf64_auxv_t) * (AT_MINSIGSTKSZ + 1));
+    void *new_argv = (void *)(std::malloc(total_length));
 
-        // init new auxv
-        uint8_t auxv_cnt = init_auxv(new_auxv, old_auxv);
-
-        for (auto i = 0; i <= auxv_cnt; i++) {
-            std::cout << std::dec << "type: " << new_auxv[i].a_type << std::hex << " value: " << new_auxv[i].a_un.a_val << std::endl;
-        }
-
-        _GOBLIN_GI(call__start)
-        (exec_argv + exec_argc - 1, exec_envp + envp_cnt - 1, new_auxv + auxv_cnt - 1, exec_argc, _GOBLIN__START, envp_cnt);
+    char **foo_argv = reinterpret_cast<char **>(new_argv);
+    uint8_t i = 0;
+    for (; i < exec_argc; i++) {
+        foo_argv[i] = exec_argv[i];
     }
+    foo_argv[i] = NULL;
+    for (i++; i < exec_argc + 1 + envp_cnt; i++) {
+        foo_argv[i] = exec_argv[i];
+    }
+    foo_argv[i] = NULL;
+
+    Elf64_auxv_t *end_auxv = reinterpret_cast<Elf64_auxv_t *>(foo_argv + i + 1);
+    {
+#define _GOBLIN_SET_AUXV_ENT(type, value)                                                                                                  \
+    end_auxv->a_un.a_val = value;                                                                                                          \
+    end_auxv->a_type = type;                                                                                                               \
+    end_auxv++;
+
+        _GOBLIN_SET_AUXV_ENT(AT_SYSINFO_EHDR, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_MINSIGSTKSZ, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_HWCAP, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_PAGESZ, 0);
+        {
+            char *phdr = new char[m_elf_header.e_phentsize * m_elf_header.e_phnum];
+            m_elf_file.seekg(m_elf_header.e_phoff);
+            m_elf_file.read(phdr, m_elf_header.e_phentsize * m_elf_header.e_phnum);
+            _GOBLIN_SET_AUXV_ENT(AT_PHDR, reinterpret_cast<uint64_t>(phdr));
+        }
+        _GOBLIN_SET_AUXV_ENT(AT_PHENT, m_elf_header.e_phentsize);
+        _GOBLIN_SET_AUXV_ENT(AT_PHNUM, m_elf_header.e_phnum);
+        _GOBLIN_SET_AUXV_ENT(AT_BASE, m_load_base_addr);
+        _GOBLIN_SET_AUXV_ENT(AT_FLAGS, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_ENTRY, m_elf_header.e_entry);
+        _GOBLIN_SET_AUXV_ENT(AT_UID, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_EUID, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_GID, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_EGID, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_SECURE, 0);
+        // if not provided by the kernel
+        _GOBLIN_SET_AUXV_ENT(AT_RANDOM, 0);
+        // _GOBLIN_SET_AUXV_ENT(AT_HWCAP2, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_EXECFN, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_PLATFORM, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_RSEQ_FEATURE_SIZE, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_RSEQ_ALIGN, 0);
+        _GOBLIN_SET_AUXV_ENT(AT_NULL, 0);
+#undef _GOBLIN_SET_AUXV_ENT
+    }
+    {
+        Elf64_auxv_t *foo_auxv = reinterpret_cast<Elf64_auxv_t *>(foo_argv + i + 1);
+        for (; foo_auxv->a_type != AT_NULL; foo_auxv++) {
+            for (auto old_auxv = reinterpret_cast<Elf64_auxv_t *>(exec_envp + envp_cnt + 1); old_auxv->a_type != AT_NULL; old_auxv++) {
+                if ((foo_auxv->a_type == old_auxv->a_type) && (foo_auxv->a_un.a_val == 0)) {
+                    foo_auxv->a_un.a_val = old_auxv->a_un.a_val;
+                }
+            }
+        }
+    }
+    // print envp:
+    for (uint16_t i = 0; i < envp_cnt; i++) {
+        std::cout << "envp[" << i << "]: " << exec_envp[i] << std::endl;
+    }
+    // print argv:
+    for (uint16_t i = 0; i < exec_argc; i++) {
+        std::cout << "argv[" << i << "]: " << exec_argv[i] << std::endl;
+    }
+
+    for (Elf64_auxv_t *foo_auxv = reinterpret_cast<Elf64_auxv_t *>(foo_argv + i + 1);
+         reinterpret_cast<Elf64_auxv_t *>(foo_auxv) <= end_auxv; foo_auxv++) {
+        std::cout << std::dec << "type: " << reinterpret_cast<Elf64_auxv_t *>(foo_auxv)->a_type << std::hex
+                  << " value: " << reinterpret_cast<Elf64_auxv_t *>(foo_auxv)->a_un.a_val << std::endl;
+    }
+
+    _GOBLIN_GI(call__start)(reinterpret_cast<void *>(end_auxv - 1), _GOBLIN__START, exec_argc);
 }
 }; // namespace Goblin
