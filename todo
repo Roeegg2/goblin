@@ -2,5 +2,14 @@
 - implement ld.so cache support
 - lazy binding support
 - implement user setting their own entry point
-- symbol versioning
 - LD_PRELOAD
+
+
+1. finish GNU hash
+2. lazy binding
+3. support dyanmically linked executables:
+	a. resolving IFUNC relocations error
+	b. TLS
+	c. .init .fini
+4. dlopen
+

@@ -29,32 +29,6 @@ Executable::~Executable(void) {}
 
 void Executable::cleanup() { return; }
 
-// ORDER OF AUXV ENTRIES:
-// 1. (if vdso enabled) AT_SYSINFO_EHDR
-// 2. AT_MINSIGSTKSZ
-//
-// 3. AT_HWCAP
-// 4. AT_PAGESZ
-// 5. AT_PHDR
-// 6. AT_PHENT
-// 7. AT_PHNUM
-// 8. AT_BASE
-// 9. AT_FLAGS
-// 10. AT_ENTRY
-// 11. AT_UID
-// 12. AT_EUID
-// 13. AT_GID
-// 14. AT_EGID
-// 15. AT_SECURE
-// 16. AT_RANDOM
-//
-// 17. AT_HWCAP2
-// 18. AT_EXECFN
-// 19. AT_PLATFORM
-// 20. AT_RSEQ_FEATURE_SIZE
-// 21. AT_RSEQ_ALIGN
-// 22. AT_NULL
-
 static uint64_t get_org_auxv_entry(const Elf64_auxv_t *auxv, const uint64_t type) {
     for (; auxv->a_type != AT_NULL; auxv++) {
         if (auxv->a_type == type) {
@@ -62,7 +36,7 @@ static uint64_t get_org_auxv_entry(const Elf64_auxv_t *auxv, const uint64_t type
         }
     }
 
-    return 0;
+    return 0x69;
 }
 
 __attribute__((always_inline)) static inline void push_argv_entries(int exec_argc, char **exec_argv) {
@@ -75,16 +49,45 @@ __attribute__((always_inline)) static inline void push_envp_entries(int exec_env
     for (exec_envpc--; exec_envpc >= 0; exec_envpc--) {
         asm volatile("pushq %0\n\t" : : "r"((uint64_t)exec_envp[exec_envpc]) : "memory");
     }
+    asm volatile("pushq $0\n\t" : : : "memory");
 }
 
 #define _GOBLIN_SET_AUXV_ENT(type, value)                                                                                                  \
-    asm volatile("pushq %0\n\t"                                                                                                            \
-                 "pushq %1\n\t"                                                                                                            \
+    asm volatile("pushq %1\n\t"                                                                                                            \
+                 "pushq %0\n\t"                                                                                                            \
                  :                                                                                                                         \
                  : "r"((uint64_t)type), "r"((uint64_t)value)                                                                               \
-                 : "memory");
+                 : "memory");                                                                                                              \
+    std::cout << "type: " << std::hex << (uint64_t)type << " value: " << (uint64_t)value << std::dec << std::endl;
 
 __attribute__((always_inline)) inline void Executable::push_auxv_entries(const Elf64_auxv_t *auxv) {
+    // ORDER OF AUXV ENTRIES:
+    // 1. (if vdso enabled) AT_SYSINFO_EHDR
+    // 2. AT_MINSIGSTKSZ
+    //
+    // 3. AT_HWCAP
+    // 4. AT_PAGESZ
+    // 5. AT_CLKTCK
+    // 6. AT_PHDR
+    // 7. AT_PHENT
+    // 8. AT_PHNUM
+    // 9. AT_BASE
+    // 10. AT_FLAGS
+    // 11. AT_ENTRY
+    // 12. AT_UID
+    // 13. AT_EUID
+    // 14. AT_GID
+    // 15. AT_EGID
+    // 16. AT_SECURE
+    // 17. AT_RANDOM
+    // 18. AT_HWCAP2??
+    // 19. AT_EXECFN
+    // 20. AT_PLATFORM
+    // 21. AT_RSEQ_FEATURE_SIZE
+    // 22. AT_RSEQ_ALIGN
+    // 23. AT_NULL
+
+    asm volatile("pushq $0\n\t" : : : "memory");
     _GOBLIN_SET_AUXV_ENT(AT_NULL, 0);
     _GOBLIN_SET_AUXV_ENT(AT_RSEQ_ALIGN, get_org_auxv_entry(auxv, AT_RSEQ_ALIGN));
     _GOBLIN_SET_AUXV_ENT(AT_RSEQ_FEATURE_SIZE, get_org_auxv_entry(auxv, AT_RSEQ_FEATURE_SIZE));
@@ -107,10 +110,12 @@ __attribute__((always_inline)) inline void Executable::push_auxv_entries(const E
     m_elf_file.seekg(m_elf_header.e_phoff);
     m_elf_file.read(phdr, m_elf_header.e_phentsize * m_elf_header.e_phnum);
     _GOBLIN_SET_AUXV_ENT(AT_PHDR, phdr);
+    _GOBLIN_SET_AUXV_ENT(AT_CLKTCK, get_org_auxv_entry(auxv, AT_CLKTCK));
     _GOBLIN_SET_AUXV_ENT(AT_PAGESZ, PAGE_SIZE);
     _GOBLIN_SET_AUXV_ENT(AT_HWCAP, get_org_auxv_entry(auxv, AT_HWCAP));
     _GOBLIN_SET_AUXV_ENT(AT_MINSIGSTKSZ, get_org_auxv_entry(auxv, AT_MINSIGSTKSZ));
-    // _GOBLIN_SET_AUXV_ENT(AT_SYSINFO_EHDR, get_org_auxv_entry(auxv, AT_SYSINFO_EHDR));
+    _GOBLIN_SET_AUXV_ENT(AT_SYSINFO_EHDR, get_org_auxv_entry(auxv, AT_SYSINFO_EHDR));
+    asm volatile("pushq $0\n\t" : : : "memory");
 }
 #undef _GOBLIN_SET_AUXV_ENT
 
@@ -143,24 +148,26 @@ __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, 
     // argv[0]
     // argc
 
-    int exec_envpc = 0;
-    for (; exec_envp[exec_envpc] != NULL; exec_envpc++)
-        ;
-    push_auxv_entries(reinterpret_cast<Elf64_auxv_t *>(exec_envp + exec_envpc + 1));
-    push_envp_entries(exec_envpc, exec_envp);
-    push_argv_entries(exec_argc, exec_argv);
+    {
+        int exec_envpc = 0;
+        for (; exec_envp[exec_envpc] != NULL; exec_envpc++)
+            ;
+        push_auxv_entries(reinterpret_cast<Elf64_auxv_t *>(exec_envp + exec_envpc + 1));
+        push_envp_entries(exec_envpc, exec_envp);
+        push_argv_entries(exec_argc, exec_argv);
 
 // push argc, set rdi to 'atexit', and finally jump to entry point
 #define _GOBLIN__START (reinterpret_cast<void (*)(void)>(m_load_base_addr + m_elf_header.e_entry))
 #define _GOBLIN__ATEXIT ((void *)(_GOBLIN_GI(atexit)))
-    asm volatile("pushq %0\n\t"
-                 "lea (%1), %%rdi\n\t"
-                 "jmp *%2\n\t"
-                 :
-                 : "r"((uint64_t)exec_argc), "r"(_GOBLIN__ATEXIT), "r"(_GOBLIN__START)
-                 : "memory");
+        asm volatile("pushq %0\n\t"
+                     "lea (%1), %%rdi\n\t"
+                     "jmp *%2\n\t"
+                     :
+                     : "r"((uint64_t)exec_argc), "r"(_GOBLIN__ATEXIT), "r"(_GOBLIN__START)
+                     : "memory");
 #undef _GOBLIN__ATEXIT
 #undef _GOBLIN__START
+    }
 
     exit(0);
 }
