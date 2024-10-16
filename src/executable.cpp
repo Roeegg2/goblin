@@ -17,11 +17,48 @@
 
 extern "C" {
 __attribute__((noreturn)) void _GOBLIN_GI(atexit)(void);
+uint64_t _GOBLIN_GI(set_tp)(void *tp);
+uint64_t _GOBLIN_GI(get_tp)(void);
 }
 
 namespace Goblin {
 
+uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr);
+
 Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path) { m_exec_shared.m_options = options; }
+
+void Executable::init_tls(void) {
+    // allocate memory for the TLS (TCB + TLS blocks)
+    void *blocks_end = mmap(NULL, get_page_count(m_exec_shared.m_tls.m_total_imgs_size + sizeof(tcbhead_t), 0), PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (blocks_end == MAP_FAILED) {
+        _GOBLIN_PRINT_ERR_INTERNAL("mmap failed allocating memory for TLS");
+    }
+
+    // set the TCB
+    tcbhead_t *tcb = reinterpret_cast<tcbhead_t *>(reinterpret_cast<Elf64_Addr>(blocks_end) + m_exec_shared.m_tls.m_total_imgs_size);
+    _GOBLIN_GI(set_tp)(tcb);
+    tcb->tcb = tcb;
+    tcb->self = tcb;
+    tcb->dtv = new dtv_t[m_exec_shared.m_tls.m_init_imgs.size()];
+    // set tid
+    id_t tid = m_tids.allocate_id();
+    if (tid >= m_tcbs.size()) {
+        m_tcbs.resize(tid + 1);
+    }
+    m_tcbs[tid] = tcb;
+
+    // initialize TLS blocks for this thread
+    for (int i = m_exec_shared.m_tls.m_init_imgs.size() - 1; i >= 0; i--) {
+        // copy data from initialization image to the TLS block
+        std::memcpy(blocks_end, m_exec_shared.m_tls.m_init_imgs[i].m_data, m_exec_shared.m_tls.m_init_imgs[i].m_size);
+        // set DTV entry for this TLS block
+        tcb->dtv[i].pointer.val = blocks_end;
+        tcb->dtv[i].pointer.to_free = nullptr;
+        // move the pointer to the next TLS block
+        blocks_end = reinterpret_cast<void *>(reinterpret_cast<uint64_t>(blocks_end) + m_exec_shared.m_tls.m_init_imgs[i].m_size);
+    }
+}
 
 static uint64_t get_org_auxv_entry(const Elf64_auxv_t *auxv, const uint64_t type) {
     for (; auxv->a_type != AT_NULL; auxv++) {

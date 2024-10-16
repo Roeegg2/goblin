@@ -14,7 +14,7 @@ Features:
 - [ ] lazy binding
 - [x] ELF hash
 - [ ] GNU hash
-- [x] static executables
+- [x] statically linked executables
 - [x] dynamically linked executables
 - [x] statically linked glibc executables
 - [ ] dynamically linked glibc executables

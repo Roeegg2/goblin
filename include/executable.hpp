@@ -11,6 +11,7 @@ namespace Goblin {
 class Executable final : public Loadable {
   private:
     __attribute__((always_inline)) inline void push_auxv_entries(const Elf64_auxv_t *auxv);
+    void init_tls(void);
     void cleanup(void);
 
   public:
@@ -24,6 +25,7 @@ class Executable final : public Loadable {
     struct executable_shared m_exec_shared;
 
     std::vector<tcbhead_t *> m_tcbs;
+    IDs m_tids;
 
     struct {
         uint16_t strtab;

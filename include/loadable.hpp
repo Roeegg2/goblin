@@ -28,20 +28,22 @@ typedef struct {
     uint64_t symbol_resolution : 2;
 } options_t;
 
-struct hash_tab_data {
-    // shared stuff
-    uint32_t nbuckets;
-    uint32_t *buckets;
-    uint32_t *chains;
-    // gnu hash specific
-    union {
-        uint32_t nchains;
-        uint32_t symoffset;
-    }; // could be grouped together so why not :)
-
-    uint32_t bloom_size;
-    uint32_t bloom_shift;
-    uint64_t *bloom;
+union hash_tab_data {
+    struct {
+        uint32_t nbuckets;
+        uint32_t nchain;
+        uint32_t *bucket;
+        uint32_t *chain;
+    } elf;
+    struct {
+        uint32_t nbuckets;
+        uint32_t sym_offset;
+        uint32_t bloom_size;
+        uint32_t bloom_shift;
+        uint64_t *bloom;
+        uint32_t *bucket;
+        uint32_t *chain;
+    } gnu;
 };
 
 struct tls_img {
@@ -114,15 +116,16 @@ class Loadable : public ELF_File {
     void map_segments(struct tls *tls, const id_t mod_id);
     void setup_segment(const Elf64_Word i);
     void set_correct_permissions(void);
-    void apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, const uint8_t binding_option);
-
+    void apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, std::set<Elf64_Word> relas_irelas,
+                                    const uint8_t binding_option);
     void apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
-                                    std::set<Elf64_Word> &relas_tls_dtpmod64, std::set<Elf64_Word> &relas_tls_tpoff64,
-                                    std::set<Elf64_Word> &relas_tls_dtpoff64);
+                                    std::set<Elf64_Word> &relas_irelas, std::set<Elf64_Word> &relas_tls_dtpmod64,
+                                    std::set<Elf64_Word> &relas_tls_tpoff64, std::set<Elf64_Word> &relas_tls_dtpoff64);
+    void apply_relocations_relas_irela(std::set<Elf64_Word> &relas_irelas, const struct rela_table &rela) const;
+    void apply_relocations_relas_jumps_globd(Loadable *dep, std::set<Elf64_Word> &relas_jumps_globd);
+    void apply_relocations_relas_copy(Loadable *dep, std::set<Elf64_Word> &relas_copy);
+
     void apply_dyn_relr_relocations(void);
-    void apply_external_dyn_relocations(Loadable *dep, const std::set<Elf64_Word> &relas_copy,
-                                        const std::set<Elf64_Word> &relas_jumps_globd, const std::set<Elf64_Word> &relas_tls_dtpmod64,
-                                        const uint8_t symbol_resolution_option);
     void apply_tls_relocations(void);
     uint32_t get_total_page_count(void) const;
 
@@ -161,7 +164,7 @@ class Loadable : public ELF_File {
         uint16_t dynsym;
     } m_sht_indices;
 
-    struct hash_tab_data m_hash_data;
+    union hash_tab_data m_hash_data;
     std::function<Elf64_Sym *(const char *)> f_lookup_dynsym;
 
     std::set<std::shared_ptr<Loadable>> m_dependencies; // list of each dependency's Loadable object. only this object's m_dependencies

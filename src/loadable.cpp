@@ -24,6 +24,64 @@ const char *Loadable::s_DEFAULT_SHARED_OBJ_PATHS[]{
 };
 std::vector<std::shared_ptr<Loadable>> Loadable::s_loaded_dependencies;
 
+static unsigned long elf_hash(const unsigned char *name) {
+    unsigned long hash = 0;
+    unsigned long g;
+
+    while (*name) {
+        hash = (hash << 4) + *name++;
+        g = hash & 0xF0000000;
+        if (g != 0)
+            hash ^= g >> 24;
+        hash &= ~g;
+    }
+
+    return hash;
+}
+
+static uint32_t gnu_hash(const uint8_t *name) {
+    uint32_t h = 5381;
+
+    for (; *name; name++) {
+        h = (h << 5) + h + (*name);
+    }
+
+    return h;
+}
+
+static int elf_perm_to_mmap_perms(const uint32_t elf_flags) {
+    int mmap_flags = 0;
+
+    if (elf_flags & 0x1)
+        mmap_flags |= PROT_EXEC;
+    if (elf_flags & 0x2)
+        mmap_flags |= PROT_WRITE;
+    if (elf_flags & 0x4)
+        mmap_flags |= PROT_READ;
+
+    return mmap_flags;
+}
+
+uint32_t get_page_count(const Elf64_Xword memsz, const Elf64_Addr addr) {
+    auto actual_size = memsz + (addr & (PAGE_SIZE - 1));
+    if (actual_size & (PAGE_SIZE - 1)) {
+        return (actual_size / PAGE_SIZE) + 1;
+    }
+    return actual_size / PAGE_SIZE;
+}
+
+static Elf64_Addr page_align_down(const Elf64_Addr addr) { return addr & (~(PAGE_SIZE - 1)); }
+
+static bool find_file(const std::filesystem::path &directory, const std::string &filename, std::string &found_path) {
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(directory)) {
+        if (entry.is_regular_file() && entry.path().filename() == filename) {
+            found_path = entry.path().string();
+            return true;
+        }
+    }
+    return false;
+}
+
 Loadable::Loadable(const std::string file_path)
     : ELF_File(file_path), m_dyn_seg_index(-1), m_tls_seg_index(-1), m_rpath(nullptr), m_runpath(nullptr), m_dyn({{0, 0}, {0, 0}, 0, 0}),
       m_plt({{0, 0}, 0}),
@@ -44,50 +102,47 @@ Elf64_Sym *Loadable::lookup_regular_dynsym(const char *sym_name) const {
     return get_sym_by_name(m_dyn.sym_table, m_dyn.str_table, sym_name, ent_num);
 }
 
-Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *sym_name) const {
-    const uint32_t namehash = gnu_hash(reinterpret_cast<const unsigned char *>(sym_name));
+Elf64_Sym *Loadable::lookup_gnu_hash_dynsym(const char *name) const {
+    const uint32_t namehash = gnu_hash(reinterpret_cast<const uint8_t *>(name));
+    const uint64_t word = m_hash_data.gnu.bloom[(namehash / 64) % m_hash_data.gnu.bloom_size];
+    uint64_t mask = 0 | (uint64_t)1 << (namehash % 64) | (uint64_t)1 << ((namehash >> m_hash_data.gnu.bloom_shift) % 64);
 
-    uint64_t word = m_hash_data.bloom[(namehash / 64) % m_hash_data.bloom_size];
-    uint64_t mask = 0 | (uint64_t)1 << (namehash % 64) | (uint64_t)1 << ((namehash >> m_hash_data.bloom_shift) % 64);
-
+    // if one bit isn't set, then the symbol isn't here
     if ((word & mask) != mask) {
-        return nullptr;
+        return NULL;
     }
 
-    uint32_t symix = m_hash_data.buckets[namehash % m_hash_data.nbuckets];
-    if (symix < m_hash_data.symoffset) {
-        return nullptr;
+    uint32_t sym_index = m_hash_data.gnu.bucket[namehash % m_hash_data.gnu.nbuckets];
+    if (!sym_index) {
+        return NULL;
     }
 
     while (true) {
-        const char *symname = m_dyn.str_table + m_dyn.sym_table[symix].st_name;
-        const uint32_t hash = m_hash_data.chains[symix - m_hash_data.symoffset];
-
-        if ((namehash | 1) == (hash | 1) && strcmp(sym_name, symname) == 0) {
-            return &m_dyn.sym_table[symix];
+        const char *sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name;
+        const uint32_t hash = m_hash_data.gnu.chain[sym_index - m_hash_data.gnu.sym_offset];
+        if ((namehash | 1) == (hash | 1) && strcmp(name, sym_name) == 0) {
+            return &m_dyn.sym_table[sym_index];
         }
 
-        /* Chain ends with an element with the lowest bit set to 1. */
         if (hash & 1) {
             break;
         }
 
-        symix++;
+        sym_index++;
     }
 
-    return nullptr;
+    return NULL;
 }
 
 Elf64_Sym *Loadable::lookup_elf_hash_dynsym(const char *sym_name) const {
     const uint32_t namehash = elf_hash(reinterpret_cast<const unsigned char *>(sym_name));
-    // FIXME: might be more efficient to hash and then compare hashes?
-    for (uint32_t i = m_hash_data.buckets[namehash % m_hash_data.nbuckets]; i != STN_UNDEF; i = m_hash_data.chains[i]) {
+    for (uint32_t i = m_hash_data.elf.bucket[namehash % m_hash_data.elf.nbuckets]; i != STN_UNDEF; i = m_hash_data.elf.chain[i]) {
         if (std::strcmp(m_dyn.str_table + m_dyn.sym_table[i].st_name, sym_name) == 0) {
             return m_dyn.sym_table + i;
         }
     }
 
-    return nullptr;
+    return NULL;
 }
 
 void Loadable::parse_dyn_segment(std::set<Elf64_Xword> &dt_needed_syms) {
@@ -315,7 +370,7 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
         const id_t mod_id = exec_shared.m_mod_ids.allocate_id();
         handle_if_module_is_glibc(exec_shared, mod_id);
 
-        _GOBLIN_PRINT_INFO("Loading shared object " << m_elf_file_path << " and assigning module ID: " << mod_id);
+        _GOBLIN_PRINT_INFO("Loading object " << m_elf_file_path << " and assigning module ID: " << mod_id);
 
         map_segments(&exec_shared.m_tls, mod_id);
     }
@@ -327,15 +382,25 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     }
     {
 
-        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64;
+        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64, relas_irelas_plt,
+            relas_irelas_dyn;
         apply_dyn_relr_relocations();
-        apply_dyn_rela_relocations(relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64);
-        apply_plt_rela_relocations(relas_jumps_globd, exec_shared.m_options.binding);
+        apply_dyn_rela_relocations(relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64,
+                                   relas_irelas_dyn);
+        apply_plt_rela_relocations(relas_jumps_globd, relas_irelas_plt, exec_shared.m_options.binding);
 
         for (auto &dep : m_dependencies) { // for every shared object dependency recursively build the shared objects tree
             dep->build_shared_objs_tree(exec_shared);
-            apply_external_dyn_relocations(dep.get(), relas_copy, relas_jumps_globd, relas_tls_dtpmod64,
-                                           exec_shared.m_options.symbol_resolution);
+
+            {
+                const uint8_t lookup_method = dep->set_sym_lookup_method(exec_shared.m_options.symbol_resolution);
+                dep->init_hash_tab_data(lookup_method);
+            }
+
+            apply_relocations_relas_copy(dep.get(), relas_copy);
+            apply_relocations_relas_jumps_globd(dep.get(), relas_jumps_globd);
+            apply_relocations_relas_irela(relas_irelas_plt, dep->m_plt.rela);
+            apply_relocations_relas_irela(relas_irelas_dyn, dep->m_dyn.rela);
         }
     }
 
@@ -379,31 +444,25 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
     // individual stuff
     if (lookup_method == SYMBOL_RESOLUTION_GNU_HASH) {
         index = m_sht_indices.gnu_hash;
-        m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
-        m_hash_data.symoffset = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
-        m_hash_data.bloom_size = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
-        m_hash_data.bloom_shift = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[3];
-        m_hash_data.bloom = &reinterpret_cast<uint64_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[4];
-        m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_hash_data.bloom)[m_hash_data.bloom_size];
-        m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
+        m_hash_data.gnu.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
+        m_hash_data.gnu.sym_offset = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
+        m_hash_data.gnu.bloom_size = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
+        m_hash_data.gnu.bloom_shift = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[3];
+        m_hash_data.gnu.bloom = &reinterpret_cast<uint64_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[4];
+        m_hash_data.gnu.bucket = &reinterpret_cast<uint32_t *>(m_hash_data.gnu.bloom)[m_hash_data.gnu.bloom_size];
+        m_hash_data.gnu.chain = &m_hash_data.gnu.bucket[m_hash_data.gnu.nbuckets];
         _GOBLIN_PRINT_INFO("Using GNU hash for symbol resolution");
     } else { // its ELF hash
         index = m_sht_indices.elf_hash;
-        m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
-        m_hash_data.nchains = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
-        m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
-        m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
+        m_hash_data.elf.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
+        m_hash_data.elf.nchain = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
+        m_hash_data.elf.bucket = &reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
+        m_hash_data.elf.chain = &m_hash_data.elf.bucket[m_hash_data.gnu.nbuckets];
         _GOBLIN_PRINT_INFO("Using ELF hash for symbol resolution");
     }
 }
 
-void Loadable::apply_external_dyn_relocations(Loadable *dep, const std::set<Elf64_Word> &relas_copy,
-                                              const std::set<Elf64_Word> &relas_jumps_globd,
-                                              __attribute__((unused)) const std::set<Elf64_Word> &relas_tls_dtpmod64,
-                                              const uint8_t symbol_resolution_option) {
-    const uint8_t lookup_method = dep->set_sym_lookup_method(symbol_resolution_option);
-    dep->init_hash_tab_data(lookup_method);
-
+void Loadable::apply_relocations_relas_copy(Loadable *dep, std::set<Elf64_Word> &relas_copy) {
     for (auto sym_index : relas_copy) {                                                  // for every needed symbol
         std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
 
@@ -417,6 +476,9 @@ void Loadable::apply_external_dyn_relocations(Loadable *dep, const std::set<Elf6
             _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
         }
     }
+}
+
+void Loadable::apply_relocations_relas_jumps_globd(Loadable *dep, std::set<Elf64_Word> &relas_jumps_globd) {
     for (auto sym_index : relas_jumps_globd) {
         std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
 
@@ -435,9 +497,17 @@ void Loadable::apply_external_dyn_relocations(Loadable *dep, const std::set<Elf6
     }
 }
 
+void Loadable::apply_relocations_relas_irela(std::set<Elf64_Word> &relas_irelas, const struct rela_table &rela) const {
+    for (auto sym_index : relas_irelas) {
+        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(rela.m_addr[sym_index].r_offset + m_load_base_addr);
+        *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(rela.m_addr[sym_index].r_addend + m_load_base_addr)());
+    }
+}
+
 void Loadable::apply_tls_relocations(void) { _GOBLIN_PRINT_INFO("No TLS relocations found"); }
 
-void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, const uint8_t binding_option) {
+void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, std::set<Elf64_Word> relas_irelas,
+                                          const uint8_t binding_option) {
     if (m_plt.rela.m_addr == nullptr) {
         _GOBLIN_PRINT_INFO("No PLT relocations found");
         return;
@@ -449,17 +519,16 @@ void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd
         return;
     } else { // eager binding
         for (Elf64_Word i = 0; i < (m_plt.rela.m_total_size / m_plt.rela.s_ENTRY_SIZE); i++) {
-            Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_plt.rela.m_addr[i].r_offset + m_load_base_addr);
-            /*Elf64_Sym *sym = reinterpret_cast<Elf64_Sym *>(m_plt.sym_table + ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));*/
-
             switch (ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info)) {
             case R_X86_64_JUMP_SLOT:
             case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
                 relas_jumps_globd.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
                 break;
             case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
-                *addr =
-                    reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_plt.rela.m_addr[i].r_addend + m_load_base_addr)());
+                relas_irelas.insert(i);
+                // *addr =
+                //     reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_plt.rela.m_addr[i].r_addend +
+                //     m_load_base_addr)());
                 break;
             default:
                 _GOBLIN_PRINT_WARN("PLT Unknown relocation type: " << std::dec << ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info));
@@ -483,8 +552,8 @@ void Loadable::apply_dyn_relr_relocations(void) {
 }
 
 void Loadable::apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
-                                          std::set<Elf64_Word> &relas_tls_dtpmod64, std::set<Elf64_Word> &relas_tls_tpoff64,
-                                          std::set<Elf64_Word> &relas_tls_dtpoff64) {
+                                          std::set<Elf64_Word> &relas_irelas, std::set<Elf64_Word> &relas_tls_dtpmod64,
+                                          std::set<Elf64_Word> &relas_tls_tpoff64, std::set<Elf64_Word> &relas_tls_dtpoff64) {
     if (m_dyn.rela.m_addr == nullptr) {
         _GOBLIN_PRINT_INFO("No RELA relocations found");
         return;
@@ -506,7 +575,9 @@ void Loadable::apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std:
             relas_copy.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
         case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
-            *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend + m_load_base_addr)());
+            relas_irelas.insert(i);
+            // *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend +
+            // m_load_base_addr)());
             break;
         case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
             relas_jumps_globd.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
