@@ -23,10 +23,6 @@ namespace Goblin {
 
 Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path) { m_exec_shared.m_options = options; }
 
-Executable::~Executable(void) {}
-
-void Executable::cleanup() { return; }
-
 static uint64_t get_org_auxv_entry(const Elf64_auxv_t *auxv, const uint64_t type) {
     for (; auxv->a_type != AT_NULL; auxv++) {
         if (auxv->a_type == type) {
@@ -34,21 +30,16 @@ static uint64_t get_org_auxv_entry(const Elf64_auxv_t *auxv, const uint64_t type
         }
     }
 
-    return 0x69;
+    return MAGIC;
 }
 
-__attribute__((always_inline)) static inline void push_argv_entries(int exec_argc, char **exec_argv) {
-    for (exec_argc--; exec_argc >= 0; exec_argc--) {
-        asm volatile("pushq %0\n\t" : : "r"((uint64_t)exec_argv[exec_argc]) : "memory");
+__attribute__((always_inline)) static inline void push_argv_envp_entries(int i, char **exec) {
+    for (i--; i >= 0; i--) {
+        asm volatile("pushq %0\n\t" : : "r"((uint64_t)exec[i]) : "memory");
     }
 }
 
-__attribute__((always_inline)) static inline void push_envp_entries(int exec_envpc, char **exec_envp) {
-    for (exec_envpc--; exec_envpc >= 0; exec_envpc--) {
-        asm volatile("pushq %0\n\t" : : "r"((uint64_t)exec_envp[exec_envpc]) : "memory");
-    }
-    asm volatile("pushq $0\n\t" : : : "memory");
-}
+__attribute__((always_inline)) inline void Executable::push_auxv_entries(const Elf64_auxv_t *auxv) {
 
 #define _GOBLIN_SET_AUXV_ENT(type, value)                                                                                                  \
     asm volatile("pushq %1\n\t"                                                                                                            \
@@ -57,7 +48,6 @@ __attribute__((always_inline)) static inline void push_envp_entries(int exec_env
                  : "r"((uint64_t)type), "r"((uint64_t)value)                                                                               \
                  : "memory");
 
-__attribute__((always_inline)) inline void Executable::push_auxv_entries(const Elf64_auxv_t *auxv) {
     // ORDER OF AUXV ENTRIES:
     // 1. (if vdso enabled) AT_SYSINFO_EHDR
     // 2. AT_MINSIGSTKSZ
@@ -84,13 +74,15 @@ __attribute__((always_inline)) inline void Executable::push_auxv_entries(const E
     // 22. AT_RSEQ_ALIGN
     // 23. AT_NULL
 
+    // this is the NULL from the end of the kernel stuff (argv strings, envp strings, etc). because we are resetting the second part of the
+    // stack, we should push NULL to have the alignment correct.
     asm volatile("pushq $0\n\t" : : : "memory");
     _GOBLIN_SET_AUXV_ENT(AT_NULL, 0);
     _GOBLIN_SET_AUXV_ENT(AT_RSEQ_ALIGN, get_org_auxv_entry(auxv, AT_RSEQ_ALIGN));
     _GOBLIN_SET_AUXV_ENT(AT_RSEQ_FEATURE_SIZE, get_org_auxv_entry(auxv, AT_RSEQ_FEATURE_SIZE));
     _GOBLIN_SET_AUXV_ENT(AT_PLATFORM, get_org_auxv_entry(auxv, AT_PLATFORM));
     _GOBLIN_SET_AUXV_ENT(AT_EXECFN, get_org_auxv_entry(auxv, AT_EXECFN));
-    // _GOBLIN_SET_AUXV_ENT(AT_HWCAP2, 0);
+    // _GOBLIN_SET_AUXV_ENT(AT_HWCAP2, 0); // not used in x86_64 i think
     _GOBLIN_SET_AUXV_ENT(AT_RANDOM, get_org_auxv_entry(auxv, AT_RANDOM));
     // if not provided by the kernel
     _GOBLIN_SET_AUXV_ENT(AT_SECURE, get_org_auxv_entry(auxv, AT_SECURE));
@@ -111,7 +103,8 @@ __attribute__((always_inline)) inline void Executable::push_auxv_entries(const E
     _GOBLIN_SET_AUXV_ENT(AT_PAGESZ, PAGE_SIZE);
     _GOBLIN_SET_AUXV_ENT(AT_HWCAP, get_org_auxv_entry(auxv, AT_HWCAP));
     _GOBLIN_SET_AUXV_ENT(AT_MINSIGSTKSZ, get_org_auxv_entry(auxv, AT_MINSIGSTKSZ));
-    _GOBLIN_SET_AUXV_ENT(AT_SYSINFO_EHDR, get_org_auxv_entry(auxv, AT_SYSINFO_EHDR));
+    _GOBLIN_SET_AUXV_ENT(AT_SYSINFO_EHDR,
+                         get_org_auxv_entry(auxv, AT_SYSINFO_EHDR)); // FIXME: need to check if vdso is enabled before pushing this
     asm volatile("pushq $0\n\t" : : : "memory");
 }
 #undef _GOBLIN_SET_AUXV_ENT
@@ -124,7 +117,6 @@ __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, 
         print_dynamic_segment();
     }
 #endif
-    cleanup();
 
     // we push:
     // ------- STACK BOTTOM -----------
@@ -146,12 +138,13 @@ __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, 
     // argc
 
     {
-        int exec_envpc = 0;
+        int exec_envpc = 0; // FIXME: this should never be a stack variable. always
         for (; exec_envp[exec_envpc] != NULL; exec_envpc++)
             ;
         push_auxv_entries(reinterpret_cast<Elf64_auxv_t *>(exec_envp + exec_envpc + 1));
-        push_envp_entries(exec_envpc, exec_envp);
-        push_argv_entries(exec_argc, exec_argv);
+        push_argv_envp_entries(exec_envpc, exec_envp);
+        asm volatile("pushq $0\n\t" : : : "memory");
+        push_argv_envp_entries(exec_argc, exec_argv);
 
 // push argc, set rdi to 'atexit', and finally jump to entry point
 #define _GOBLIN__START (reinterpret_cast<void (*)(void)>(m_load_base_addr + m_elf_header.e_entry))
@@ -168,16 +161,4 @@ __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, 
 
     exit(0);
 }
-
-// uint8_t j = 0;
-// for (; j < exec_argc; j++) {
-//     std::cout << foo_argv[j] << std::endl;
-// }
-// for (j++; j < exec_argc + 1 + envp_cnt; j++) {
-//     std::cout << foo_argv[j] << std::endl;
-// }
-// for (Elf64_auxv_t *foo_auxv = reinterpret_cast<Elf64_auxv_t *>(foo_argv + i + 1); reinterpret_cast<Elf64_auxv_t *>(foo_auxv) <= end_auxv;
-//      foo_auxv++) {
-//     std::cout << std::dec << "type: " << reinterpret_cast<Elf64_auxv_t *>(foo_auxv)->a_type << std::hex
-//               << " value: " << reinterpret_cast<Elf64_auxv_t *>(foo_auxv)->a_un.a_val << std::endl;
 } // namespace Goblin

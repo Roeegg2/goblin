@@ -17,7 +17,7 @@ Features:
 - [x] static executables
 - [x] dynamically linked executables
 - [x] statically linked glibc executables
-- [x] dynamically linked glibc executables
-- [x] static TLS support
-- [x] dynamic TLS support
+- [ ] dynamically linked glibc executables
+- [ ] static TLS support
+- [ ] dynamic TLS support
 - [ ] dlopen() support

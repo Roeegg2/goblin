@@ -25,7 +25,7 @@ static uint16_t parse_options(const int argc, char **argv, __attribute__((unused
 int main(int argc, char **argv, char **envp) {
     options_t options = {
         .binding = BINDING_EAGER,
-        .symbol_resolution = SYMBOL_RESOLUTION_ELF_HASH,
+        .symbol_resolution = SYMBOL_RESOLUTION_GNU_HASH,
     };
     int i = parse_options(argc, argv, options); // move argv to the params passed to the actual executable, not Goblin
     Executable *executable = new Executable(argv[1], options);

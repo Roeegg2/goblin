@@ -372,6 +372,7 @@ try_symtab:
 void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
     uint8_t index;
     if (lookup_method == SYMBOL_RESOLUTION_SYMTAB) { // no data to read!
+        _GOBLIN_PRINT_INFO("Using symtab for symbol resolution");
         return;
     }
 
@@ -385,12 +386,14 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
         m_hash_data.bloom = &reinterpret_cast<uint64_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[4];
         m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_hash_data.bloom)[m_hash_data.bloom_size];
         m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
+        _GOBLIN_PRINT_INFO("Using GNU hash for symbol resolution");
     } else { // its ELF hash
         index = m_sht_indices.elf_hash;
         m_hash_data.nbuckets = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[0];
         m_hash_data.nchains = reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[1];
         m_hash_data.buckets = &reinterpret_cast<uint32_t *>(m_sect_headers[index].sh_addr + m_load_base_addr)[2];
         m_hash_data.chains = &m_hash_data.buckets[m_hash_data.nbuckets];
+        _GOBLIN_PRINT_INFO("Using ELF hash for symbol resolution");
     }
 }
 
