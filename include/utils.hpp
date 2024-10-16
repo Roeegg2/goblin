@@ -19,6 +19,7 @@
 namespace Goblin {
 typedef Elf64_Word id_t;
 
+constexpr const uint64_t MAGIC = 0x746F6C6564616E6F;
 constexpr uint16_t PAGE_SIZE = 0x1000;
 
 class IDs {

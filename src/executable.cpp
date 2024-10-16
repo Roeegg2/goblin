@@ -21,8 +21,6 @@ __attribute__((noreturn)) void _GOBLIN_GI(atexit)(void);
 
 namespace Goblin {
 
-uint64_t _dl_random = 0xabcdabcd;
-
 Executable::Executable(const std::string file_path, const options_t options) : Loadable(file_path) { m_exec_shared.m_options = options; }
 
 Executable::~Executable(void) {}
@@ -57,8 +55,7 @@ __attribute__((always_inline)) static inline void push_envp_entries(int exec_env
                  "pushq %0\n\t"                                                                                                            \
                  :                                                                                                                         \
                  : "r"((uint64_t)type), "r"((uint64_t)value)                                                                               \
-                 : "memory");                                                                                                              \
-    std::cout << "type: " << std::hex << (uint64_t)type << " value: " << (uint64_t)value << std::dec << std::endl;
+                 : "memory");
 
 __attribute__((always_inline)) inline void Executable::push_auxv_entries(const Elf64_auxv_t *auxv) {
     // ORDER OF AUXV ENTRIES:

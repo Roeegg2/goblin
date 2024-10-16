@@ -14,7 +14,10 @@ Features:
 - [ ] lazy binding
 - [x] ELF hash
 - [ ] GNU hash
-- [ ] symbol versioning
+- [x] static executables
+- [x] dynamically linked executables
+- [x] statically linked glibc executables
+- [x] dynamically linked glibc executables
 - [x] static TLS support
 - [x] dynamic TLS support
 - [ ] dlopen() support
