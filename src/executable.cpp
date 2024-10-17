@@ -37,7 +37,7 @@ void Executable::init_tls(void) {
 
     // set the TCB
     tcbhead_t *tcb = reinterpret_cast<tcbhead_t *>(reinterpret_cast<Elf64_Addr>(blocks_end) + m_exec_shared.m_tls.m_total_imgs_size);
-    _GOBLIN_GI(set_tp)(tcb);
+    // _GOBLIN_GI(set_tp)(tcb);
     tcb->tcb = tcb;
     tcb->self = tcb;
     tcb->dtv = new dtv_t[m_exec_shared.m_tls.m_init_imgs.size()];
@@ -148,6 +148,8 @@ __attribute__((always_inline)) inline void Executable::push_auxv_entries(const E
 
 __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, char **exec_envp) {
     build_shared_objs_tree(m_exec_shared);
+    init_tls();
+    apply_post_tls_init_relocations();
 
 #ifdef DEBUG
     if (m_dyn_seg_index > 0) {
@@ -182,19 +184,18 @@ __attribute__((noreturn)) void Executable::run(int exec_argc, char **exec_argv, 
         push_argv_envp_entries(exec_envpc, exec_envp);
         asm volatile("pushq $0\n\t" : : : "memory");
         push_argv_envp_entries(exec_argc, exec_argv);
-
+    }
 // push argc, set rdi to 'atexit', and finally jump to entry point
 #define _GOBLIN__START (reinterpret_cast<void (*)(void)>(m_load_base_addr + m_elf_header.e_entry))
 #define _GOBLIN__ATEXIT ((void *)(_GOBLIN_GI(atexit)))
-        asm volatile("pushq %0\n\t"
-                     "lea (%1), %%rdi\n\t"
-                     "jmp *%2\n\t"
-                     :
-                     : "r"((uint64_t)exec_argc), "r"(_GOBLIN__ATEXIT), "r"(_GOBLIN__START)
-                     : "memory");
+    asm volatile("pushq %0\n\t"
+                 "lea (%1), %%rdi\n\t"
+                 "jmp *%2\n\t"
+                 :
+                 : "r"((uint64_t)exec_argc), "r"(_GOBLIN__ATEXIT), "r"(_GOBLIN__START)
+                 : "memory");
 #undef _GOBLIN__ATEXIT
 #undef _GOBLIN__START
-    }
 
     exit(0);
 }

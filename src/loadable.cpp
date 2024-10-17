@@ -321,6 +321,7 @@ void Loadable::map_segments(struct tls *tls, const id_t mod_id) {
             m_tls_seg_index = i;
             tls->m_init_imgs.emplace_back(mod_id, m_prog_headers[i].p_memsz, &m_segment_data[i], tls->m_total_imgs_size, true);
             tls->m_total_imgs_size += m_prog_headers[i].p_memsz;
+            m_tls_img = &tls->m_init_imgs.back();
             break;
         case PT_DYNAMIC:
             m_dyn_seg_index = i;
@@ -367,14 +368,16 @@ void Loadable::handle_if_module_is_glibc(struct executable_shared &exec_shared, 
 
 void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     {
-        const id_t mod_id = exec_shared.m_mod_ids.allocate_id();
-        handle_if_module_is_glibc(exec_shared, mod_id);
+        m_mod_id = exec_shared.m_mod_ids.allocate_id();
+        handle_if_module_is_glibc(exec_shared, m_mod_id);
 
-        _GOBLIN_PRINT_INFO("Loading object " << m_elf_file_path << " and assigning module ID: " << mod_id);
+        _GOBLIN_PRINT_INFO("Loading object " << m_elf_file_path << " and assigning module ID: " << m_mod_id);
 
-        map_segments(&exec_shared.m_tls, mod_id);
+        map_segments(&exec_shared.m_tls, m_mod_id);
+        if (m_elf_header.e_type == ET_EXEC) { // if this is a statically linked executable, we only need to act as a loader
+            return;
+        }
     }
-
     if (m_dyn_seg_index >= 0) {
         std::set<Elf64_Xword> dt_needed_syms;
         parse_dyn_segment(dt_needed_syms);
@@ -382,12 +385,11 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
     }
     {
 
-        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64, relas_irelas_plt,
-            relas_irelas_dyn;
         apply_dyn_relr_relocations();
+        std::set<Elf64_Word> relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64;
         apply_dyn_rela_relocations(relas_copy, relas_jumps_globd, relas_tls_dtpmod64, relas_tls_tpoff64, relas_tls_dtpoff64,
-                                   relas_irelas_dyn);
-        apply_plt_rela_relocations(relas_jumps_globd, relas_irelas_plt, exec_shared.m_options.binding);
+                                   m_relas_irelas_dyn);
+        apply_plt_rela_relocations(relas_jumps_globd, m_relas_irelas_plt, exec_shared.m_options.binding);
 
         for (auto &dep : m_dependencies) { // for every shared object dependency recursively build the shared objects tree
             dep->build_shared_objs_tree(exec_shared);
@@ -399,12 +401,11 @@ void Loadable::build_shared_objs_tree(struct executable_shared &exec_shared) {
 
             apply_relocations_relas_copy(dep.get(), relas_copy);
             apply_relocations_relas_jumps_globd(dep.get(), relas_jumps_globd);
-            apply_relocations_relas_irela(relas_irelas_plt, dep->m_plt.rela);
-            apply_relocations_relas_irela(relas_irelas_dyn, dep->m_dyn.rela);
+            apply_relocations_relas_dtpmod64(dep.get(), relas_tls_dtpmod64);
+            apply_relocations_relas_dtpoff64(dep.get(), relas_tls_dtpoff64);
+            apply_relocations_relas_tpoff64(dep.get(), relas_tls_tpoff64);
         }
     }
-
-    set_correct_permissions(); // set the correct permissions for the segments
 }
 
 /* for anyone reading this in the future, I'm very sorry for this
@@ -462,18 +463,26 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
     }
 }
 
+void Loadable::apply_post_tls_init_relocations(void) {
+    for (auto &dep : m_dependencies) {
+        dep->apply_post_tls_init_relocations();
+        // doing these here because some ifunc resolvers use TLS
+        apply_relocations_relas_irela(m_relas_irelas_plt, dep->m_plt.rela);
+        apply_relocations_relas_irela(m_relas_irelas_dyn, dep->m_dyn.rela);
+    }
+    set_correct_permissions(); // set the correct permissions for the segments
+}
+
 void Loadable::apply_relocations_relas_copy(Loadable *dep, std::set<Elf64_Word> &relas_copy) {
     for (auto sym_index : relas_copy) {                                                  // for every needed symbol
         std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
 
-        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
+        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // look up the symbol
 
         if (sym != nullptr) {
             char *src = reinterpret_cast<char *>(m_dyn.sym_table[sym_index].st_value + m_load_base_addr);
             const char *dst = reinterpret_cast<const char *>(sym->st_value + dep->m_load_base_addr);
             std::strcpy(src, dst);
-        } else {
-            _GOBLIN_PRINT_WARN("Couldn't find definition for external symbol: " << org_sym_name);
         }
     }
 }
@@ -489,11 +498,13 @@ void Loadable::apply_relocations_relas_jumps_globd(Loadable *dep, std::set<Elf64
             }
         }
 
-        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // loop up the symbol
+        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // look up the symbol
 
-        Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[sym_index].r_offset +
-                                                          m_load_base_addr); // get address where we need to apply relocation
-        *addr = sym->st_value + dep->m_load_base_addr;
+        if (sym != nullptr) {
+            Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[sym_index].r_offset +
+                                                              m_load_base_addr); // get address where we need to apply relocation
+            *addr = sym->st_value + dep->m_load_base_addr;
+        }
     }
 }
 
@@ -504,7 +515,44 @@ void Loadable::apply_relocations_relas_irela(std::set<Elf64_Word> &relas_irelas,
     }
 }
 
-void Loadable::apply_tls_relocations(void) { _GOBLIN_PRINT_INFO("No TLS relocations found"); }
+void Loadable::apply_relocations_relas_dtpmod64(Loadable *dep, std::set<Elf64_Word> &relas_tls_dtpmod64) {
+    for (auto sym_index : relas_tls_dtpmod64) {
+        std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
+
+        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // look up the symbol
+
+        if (sym != nullptr) {
+            Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[sym_index].r_offset + m_load_base_addr);
+            *addr = dep->m_mod_id;
+        }
+    }
+}
+
+void Loadable::apply_relocations_relas_dtpoff64(Loadable *dep, std::set<Elf64_Word> &relas_tls_dtpoff64) {
+    for (auto sym_index : relas_tls_dtpoff64) {
+        std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
+
+        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // look up the symbol
+
+        if (sym != nullptr) {
+            Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[sym_index].r_offset + m_load_base_addr);
+            *addr = sym->st_value + m_dyn.rela.m_addr[sym_index].r_addend;
+        }
+    }
+}
+
+void Loadable::apply_relocations_relas_tpoff64(Loadable *dep, std::set<Elf64_Word> &relas_tls_tpoff64) {
+    for (auto sym_index : relas_tls_tpoff64) {
+        std::string org_sym_name = m_dyn.str_table + m_dyn.sym_table[sym_index].st_name; // get name of original symbol
+
+        Elf64_Sym *sym = dep->f_lookup_dynsym(org_sym_name.c_str()); // look up the symbol
+
+        if (sym != nullptr) {
+            Elf64_Addr *addr = reinterpret_cast<Elf64_Addr *>(m_dyn.rela.m_addr[sym_index].r_offset + m_load_base_addr);
+            *addr = sym->st_value + m_tls_img->m_tlsoffset;
+        }
+    }
+}
 
 void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, std::set<Elf64_Word> relas_irelas,
                                           const uint8_t binding_option) {
@@ -526,9 +574,6 @@ void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd
                 break;
             case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
                 relas_irelas.insert(i);
-                // *addr =
-                //     reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_plt.rela.m_addr[i].r_addend +
-                //     m_load_base_addr)());
                 break;
             default:
                 _GOBLIN_PRINT_WARN("PLT Unknown relocation type: " << std::dec << ELF64_R_TYPE(m_plt.rela.m_addr[i].r_info));
@@ -576,19 +621,18 @@ void Loadable::apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std:
             break;
         case R_X86_64_IRELATIVE: // interpret rela.addr[i].r_addend +
             relas_irelas.insert(i);
-            // *addr = reinterpret_cast<Elf64_Addr>(reinterpret_cast<Elf64_Addr *(*)()>(m_dyn.rela.m_addr[i].r_addend +
-            // m_load_base_addr)());
             break;
         case R_X86_64_GLOB_DAT: // simply copy the value of the symbol to the address
             relas_jumps_globd.insert(ELF64_R_SYM(m_dyn.rela.m_addr[i].r_info));
             break;
-        case R_X86_64_DTPMOD64:
+        case R_X86_64_DTPMOD64: // module ID of the object containing the symbol
             relas_tls_dtpmod64.insert(i);
             break;
-        case R_X86_64_DTPOFF64:
+        case R_X86_64_DTPOFF64: // offset of variable from its block
             relas_tls_dtpoff64.insert(i);
+            std::cout << "DTPOFF64" << std::endl;
             break;
-        case R_X86_64_TPOFF64:
+        case R_X86_64_TPOFF64: // offset of variable from %fs
             relas_tls_tpoff64.insert(i);
             break;
         default:

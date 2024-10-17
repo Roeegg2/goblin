@@ -124,9 +124,12 @@ class Loadable : public ELF_File {
     void apply_relocations_relas_irela(std::set<Elf64_Word> &relas_irelas, const struct rela_table &rela) const;
     void apply_relocations_relas_jumps_globd(Loadable *dep, std::set<Elf64_Word> &relas_jumps_globd);
     void apply_relocations_relas_copy(Loadable *dep, std::set<Elf64_Word> &relas_copy);
+    void apply_post_tls_init_relocations(void);
+    void apply_relocations_relas_dtpmod64(Loadable *dep, std::set<Elf64_Word> &relas_tls_dtpmod64);
+    void apply_relocations_relas_dtpoff64(Loadable *dep, std::set<Elf64_Word> &relas_tls_dtpoff64);
+    void apply_relocations_relas_tpoff64(Loadable *dep, std::set<Elf64_Word> &relas_tls_tpoff64);
 
     void apply_dyn_relr_relocations(void);
-    void apply_tls_relocations(void);
     uint32_t get_total_page_count(void) const;
 
     Elf64_Sym *lookup_regular_dynsym(const char *sym_name) const;
@@ -144,6 +147,11 @@ class Loadable : public ELF_File {
     std::vector<void *> m_segment_data;
 
   private:
+    id_t m_mod_id; // FIXME: shouldn't be tied to a Loadable instance, since the same Loadable can be used by many diffrent executables, in
+                   // which the Loadable might have a different mod_id
+    struct tls_img *m_tls_img; // same thing here
+    std::set<Elf64_Word> m_relas_irelas_plt,
+        m_relas_irelas_dyn; // ...and same thing here
     char *m_rpath;
     char *m_runpath;
     struct {
