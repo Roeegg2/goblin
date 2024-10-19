@@ -116,7 +116,7 @@ class Loadable : public ELF_File {
     void map_segments(struct tls *tls, const id_t mod_id);
     void setup_segment(const Elf64_Word i);
     void set_correct_permissions(void);
-    void apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, std::set<Elf64_Word> relas_irelas,
+    void apply_plt_rela_relocations(std::set<Elf64_Word> &relas_jumps_globd, std::set<Elf64_Word> &relas_irelas,
                                     const uint8_t binding_option);
     void apply_dyn_rela_relocations(std::set<Elf64_Word> &relas_copy, std::set<Elf64_Word> &relas_jumps_globd,
                                     std::set<Elf64_Word> &relas_irelas, std::set<Elf64_Word> &relas_tls_dtpmod64,

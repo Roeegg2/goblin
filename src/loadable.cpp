@@ -466,10 +466,10 @@ void Loadable::init_hash_tab_data(const uint8_t lookup_method) {
 void Loadable::apply_post_tls_init_relocations(void) {
     for (auto &dep : m_dependencies) {
         dep->apply_post_tls_init_relocations();
-        // doing these here because some ifunc resolvers use TLS
-        apply_relocations_relas_irela(m_relas_irelas_plt, dep->m_plt.rela);
-        apply_relocations_relas_irela(m_relas_irelas_dyn, dep->m_dyn.rela);
     }
+    // doing these here because some ifunc resolvers use TLS
+    apply_relocations_relas_irela(m_relas_irelas_plt, m_plt.rela);
+    apply_relocations_relas_irela(m_relas_irelas_dyn, m_dyn.rela);
     set_correct_permissions(); // set the correct permissions for the segments
 }
 
@@ -554,7 +554,7 @@ void Loadable::apply_relocations_relas_tpoff64(Loadable *dep, std::set<Elf64_Wor
     }
 }
 
-void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> relas_jumps_globd, std::set<Elf64_Word> relas_irelas,
+void Loadable::apply_plt_rela_relocations(std::set<Elf64_Word> &relas_jumps_globd, std::set<Elf64_Word> &relas_irelas,
                                           const uint8_t binding_option) {
     if (m_plt.rela.m_addr == nullptr) {
         _GOBLIN_PRINT_INFO("No PLT relocations found");
